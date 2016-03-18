@@ -64,7 +64,7 @@ initfunc
 
 ;Initialize zeropage variables
         FLG  ZP_temp1   ;Hardware-interrupt flag
-        FLG  ZP_temp1+1 ;Time between two flanks
+        FLG  ZP_temp1+1 ;Time between two flanks (Value * 1/30.517578Hz)
         FLG  ZP_temp2   ;Temp data
         FLG  ZP_temp2+1 ;Reserve       
         CLA
@@ -195,13 +195,13 @@ timer
 ;DCF77 decoding   
 ;---------------------------------------------------------
 
-;Mit DCF77-Signal Synchronisieren -> 59. Sekunde ermitteln
+;Synchronize with signal -> Detect 59th second
 impCtrl 
         CLC
         LDA ZP_temp1+1
         SBC #50  
         JNC imp_1
-        ;Impulszeit >= 50 -> Länger als 1 Sekunde Pause
+        ;Flanktime >= 50 -> Time longer than 1 second
 ;Signal synchron
         CLA 
         STAA VAR_synced
@@ -209,114 +209,114 @@ impCtrl
         STAA VAR_flankcnt
         JMP imp_end
      
-;Sekunden zählen, Signal überprüfen   
+;Count seconds, Check signal for errors   
 imp_1   CLC
         LDA ZP_temp1+1
         SBC #20  
-        JNC imp_2 ;Impulszeit < 20 -> Nächstes Bit
-        ;Impulszeit >= 20 -> Nächste Sekunde
+        JNC imp_2 ;Flanktime < 20 -> Next bit
+        ;Flanktime >= 20 -> Next second
         INCA VAR_second
-        ;Signal überpüfen -> Doppelt so viele Flanken wie Sekunden?
+        ;Signal checking -> Twice as many flanks as seconds?
         LDAA VAR_flankcnt
         DIV #2
         CMPA VAR_second
         JPZ imp_end
-;Nicht mehr synchron oder felerhaftes Signal        
+;No longer synchronized        
 DeSync  LDA #1 
         STAA VAR_synced
         CLA
         STAA VAR_dataok
         JMP imp_end
         
-;Datenpakete differenzieren
+;Determine datapackets
 imp_2   LDAA VAR_second
-        CMP #20 ;Beginn der Zeitinformationen = 1
+        CMP #20 ;Begin of time information = 1
         JNZ imp_3
         LDA ZP_temp1+1
         JSR getBit
-        JPZ DeSync ;Bit 20 != 1 -> Nicht mehr synchron oder fehlerhaftes Signal
+        JPZ DeSync ;Bit 20 != 1 -> No longer synchronized or incorrect signal
         JMP imp_end 
  
 imp_3   LDAA VAR_synced
         JNZ imp_end
-        ;Nur weitermachen wenn synchronisiert
+        ;Only continue if synchronized
         CLC
         LDAA VAR_second
         SBC #20
         JNC imp_end 
-        ;Sekunde >= 21
+        ;Second >= 21
         CLC
         LDAA VAR_second
         SBC #28
-        JNC imp_4 ;Minuten erfassen
-        ;Sekunde >= 29
+        JNC imp_4 ;Go to minute decoding
+        ;Second >= 29
         CLC
         LDAA VAR_second
         SBC #35
-        JNC imp_7 ;Stunden erfassen
-        ;Sekunde >= 36
+        JNC imp_7 ;Go to hour decoding
+        ;Second >= 36
         CLC
         LDAA VAR_second
         SBC #41
-        JNC imp_10 ;Kalendertag erfassen
-        ;Sekunde >= 42
+        JNC imp_10 ;Go to day decoding
+        ;Second >= 42
         CLC
         LDAA VAR_second
         SBC #44
-        JNC imp_12 ;Wochentag erfassen
-        ;Sekunde >= 45
+        JNC imp_12 ;Go to weekday decoding
+        ;Second >= 45
         CLC
         LDAA VAR_second
         SBC #49
-        JNC imp_14 ;Monat erfassen
-        ;Sekunde >= 50
+        JNC imp_14 ;Go to month decoding
+        ;Second >= 50
         CLC
         LDAA VAR_second
         SBC #58
-        JNC imp_16 ;Jahr erfassen
-        ;Sekunde >= 59
+        JNC imp_16 ;Go to year decoding
+        ;Second >= 59
         JMP imp_end
 
 ;---------------------------------------------------------
 
-;Minuten erfassen
+;Decode minutes
 imp_4   LDAA VAR_second
         CMP #21
         JNZ imp_6
         MOV ZP_temp2, #0
 
-;Hole Bit
+;Get bit
 imp_6   LDA ZP_temp1+1
         JSR getBit
         PHA
         LDAA VAR_second
         CMP #28
-        JPZ imp_5 ;Letze Bit -> Parität
+        JPZ imp_5 ;Last bit -> Check parity
         PLA
         ORA ZP_temp2
         SHR
         STA ZP_temp2
         JMP imp_end
 
-;Parität überprüfen        
+;Check parity        
 imp_5   LDA ZP_temp2  
         LDX #7
         CLY
         JSR bitCnt
         JPC par_0   
-        PLA ;Anzahl Bits = "ungerade"
+        PLA ;Bit count = "unequal"
         JNZ par_1
         LDA #1
         EORA VAR_dataok
         STAA VAR_dataok
         JMP imp_end
-par_0   PLA ;Anzahl Bits = "gerade"
+par_0   PLA ;Bit count = "equal"
         JPZ par_1
         LDA #1
         EORA VAR_dataok
         STAA VAR_dataok
         JMP imp_end
-par_1   LDA ZP_temp2 ;Parität OK
+par_1   LDA ZP_temp2 ;Parity OK
         JSR bcdToDec
         STAA VAR_tmpminutes
         LDA #1
@@ -325,45 +325,45 @@ par_1   LDA ZP_temp2 ;Parität OK
         JMP imp_end
 
     
-;Stunden erfassen
+;Decode hours
 imp_7   LDAA VAR_second
         CMP #29
         JNZ imp_9
         MOV ZP_temp2, #0
 
-;Hole Bit
+;Get
 imp_9   LDA ZP_temp1+1
         JSR getBit
         PHA
         LDAA VAR_second
         CMP #35
-        JPZ imp_8 ;Letze Bit -> Parität
+        JPZ imp_8 ;Last bit -> Check parity
         PLA
         ORA ZP_temp2
         SHR
         STA ZP_temp2 
         JMP imp_end
 
-;Parität überprüfen         
-imp_8   SHR ZP_temp2 ;Letze Bit -> Um 1 nach rechts schieben
+;Check parity         
+imp_8   SHR ZP_temp2 ;Shift hour-byte right by 1
         LDA ZP_temp2  
         LDX #6
         CLY
         JSR bitCnt
         JPC par_2   
-        PLA ;Anzahl Bits = "ungerade"
+        PLA ;Bit count = "unqual"
         JNZ par_3
         LDA #2
         EORA VAR_dataok
         STAA VAR_dataok
         JMP imp_end
-par_2   PLA ;Anzahl Bits = "gerade"
+par_2   PLA ;Bit count = "equal"
         JPZ par_3
         LDA #2
         EORA VAR_dataok
         STAA VAR_dataok
         JMP imp_end
-par_3   LDA ZP_temp2 ;Parität OK
+par_3   LDA ZP_temp2 ;Parity OK
         JSR bcdToDec
         STAA VAR_tmphours
         LDA #2
@@ -372,24 +372,24 @@ par_3   LDA ZP_temp2 ;Parität OK
         JMP imp_end
         
         
-;Kalendertag erfassen
+;Decode day
 imp_10  LDAA VAR_second
         CMP #36
         JNZ imp_11
         MOV ZP_temp2, #0
   
-;Hole Bit      
+;Get bit      
 imp_11  LDA ZP_temp1+1
         JSR getBit
         ORA ZP_temp2
         SHR
         STA ZP_temp2  
       
-;High Bits zählen
+;Count high bits
         LDAA VAR_second
         CMP #41       
         JNZ imp_end 
-        SHR ZP_temp2 ;Letze Bit -> Um 1 nach rechts schieben
+        SHR ZP_temp2 ;Shift day-byte right by 1
         LDA ZP_temp2  
         LDX #6
         CLY
@@ -401,7 +401,7 @@ imp_11  LDA ZP_temp1+1
         JMP imp_end        
         
         
-;Wochentag erfassen
+;Decode weekday
 imp_12  LDAA VAR_second
         CMP #42
         JNZ imp_13
@@ -412,11 +412,11 @@ imp_13  LDA ZP_temp1+1
         ORA ZP_temp2
         SHR
         STA ZP_temp2       
-;High Bits zählen
+;Count high bits
         LDAA VAR_second
         CMP #44       
         JNZ imp_end 
-        ;Um 4 nach rechts schieben
+        ;Shift weekday-byte right by 4
         LDA ZP_temp2 
         DIV #10h
         STA ZP_temp2 
@@ -429,24 +429,24 @@ imp_13  LDA ZP_temp1+1
         STAA VAR_tmpweekday
         JMP imp_end  
         
-;Monat erfassen
+;Decode month
 imp_14  LDAA VAR_second
         CMP #45
         JNZ imp_15
         MOV ZP_temp2, #0
         
-;Hole Bit 
+;Get bit 
 imp_15  LDA ZP_temp1+1
         JSR getBit
         ORA ZP_temp2
         SHR
         STA ZP_temp2 
         
-;High Bits zählen
+;Count high bits
         LDAA VAR_second
         CMP #49       
         JNZ imp_end 
-        ;Um 2 nach rechts schieben
+        ;Shift month-byte right by 2
         SHR ZP_temp2  
         SHR ZP_temp2  
         LDA ZP_temp2  
@@ -459,84 +459,86 @@ imp_15  LDA ZP_temp1+1
         STAA VAR_tmpmonth
         JMP imp_end 
         
-;Jahr erfassen
+;Decode year
 imp_16  LDAA VAR_second
         CMP #50
         JNZ imp_18
         MOV ZP_temp2, #0
 
-;Hole Bit
+;Get bit
 imp_18  LDA ZP_temp1+1
         JSR getBit
         PHA
         LDAA VAR_second
         CMP #58
-        JPZ imp_17 ;Letze Bit -> Parität
+        JPZ imp_17 ;Last bit -> Check parity
         PLA
         ORA ZP_temp2
         SHR
         STA ZP_temp2 
         JMP imp_end
 
-;Parität für das komplette Datum überprüfen         
-imp_17  SHL ZP_temp2 ;Letze Bit -> Um 1 nach links schieben
+;Check parity for whole date (Day, weekday, month, year)         
+imp_17  SHL ZP_temp2 ;Shift year-byte left by 1
         LDA ZP_temp2
         LDX #8
         LDYA VAR_dateparity
         JSR bitCnt
         JPC par_4   
-        PLA ;Anzahl Bits = "ungerade"
+        PLA ;Bit count = "unqual"
         JNZ par_5
         LDA #4
         EORA VAR_dataok
         STAA VAR_dataok
         JMP imp_end
-par_4   PLA ;Anzahl Bits = "gerade"
+par_4   PLA ;Bit count = "equal"
         JPZ par_5
         LDA #4
         EORA VAR_dataok
         STAA VAR_dataok
         JMP imp_end
-par_5   LDA ZP_temp2 ;Parität OK
-        JSR bcdToDec ;Jahr übernehmen
+par_5   LDA ZP_temp2 ;Parity OK
+        JSR bcdToDec ;Take over 'year'
         STAA VAR_year
-        LDAA VAR_tmpminutes ;Minuten übernehmen
+        LDAA VAR_tmpminutes ;Take over 'minutes'
         STAA VAR_minutes
-        LDAA VAR_tmphours ;Stunden übernehmen
+        LDAA VAR_tmphours ;Take over 'hours'
         STAA VAR_hours
-        LDAA VAR_tmpday ;Tag übernehmen
+        LDAA VAR_tmpday ;Take over 'day'
         STAA VAR_day
-        LDAA VAR_tmpweekday ;Wochentag übernehmen
+        LDAA VAR_tmpweekday ;Take over 'weekday'
         STAA VAR_weekday
-        LDAA VAR_tmpmonth ;Monat übernehmen
+        LDAA VAR_tmpmonth ;Take over 'month'
         STAA VAR_month
         LDA #4
         ORAA VAR_dataok
         STAA VAR_dataok
       
-;Auf nächste Flanke warten
+;Wait for next flank
 imp_end
         MOV ZP_temp1, #0
         MOV ZP_temp1+1, #0
         RTS
 
 ;--------------------------------------------------------- 
-;Hilfsfunktionen   
+;Helper functions   
 ;---------------------------------------------------------
 
-;Information aus Impulszeit dekodieren (Input: A = Impuzlszähler) (Output: A = High(80h), Low(00h))        
+;Get bit information from Flanktime (Input: A = Flanktime) (Output: A = High(80h), Low(00h))        
 getBit
         CLC       
         SBC #3
         JNC get_0
-        ;Impulszeit >= 3 -> Bit = 1
+        ;Flanktime >= 3 -> Bit = 1
         LDA #80h
         RTS
-get_0   CLA ;Impulszeit < 3 -> Bit = 0
+get_0   CLA ;Flanktime < 3 -> Bit = 0
         RTS
         
         
-;High Bits zählen (Input: A = Byte, X=Anzahl Bits, Y=Zähler offset) (Output: A=Anzahl, C=0 -> Ungerade, C=1 -> Gerade)        
+;Count high bits
+;Input: A = Byte, X = Number of bits Bits, Y=Counter offset
+;Output: A = Counter value, Carry = 0 -> unequal, Carry = 1 -> equal
 bitCnt
 cnt_0   SHR
         JNC cnt_1
@@ -546,14 +548,14 @@ cnt_1   DXJP cnt_0
         PHA
         MOD #2
         JPZ cnt_2
-        CLC ;Anzahl "ungerade"
+        CLC ;Counter value "unequal"
         JMP cnt_3
-cnt_2   SEC ;Anzahl "gerade"
+cnt_2   SEC ;Counter value "equal"
 cnt_3   PLA
         RTS
         
         
-;BCD in Dezimal umwandeln (Input: A = BCD-Zahl) (Output: A = Dezimalzahl)       
+;Translate BCD in decimal (Input: A = BCD value) (Output: A = decimal vlaue)       
 bcdToDec
         PHA
         DIV #10h
