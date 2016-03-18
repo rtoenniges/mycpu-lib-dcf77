@@ -22,10 +22,10 @@ ZP_temp2        EQU  12h
 CON_INT         EQU 7   ;IRQ7
 
 ;Variables
-VAR_second      DB  0   ;Aktuelle Sekunde -> Aktuelles Bit
-VAR_flankcnt    DB  0   ;Flankenzähler
-VAR_synced      DB  1   ;Wird bei erfolgreicher Synchronisation auf 0 gesetzt
-VAR_dataok      DB  0   ;Bit 1 = Minuten OK, Bit 2 = Stunden OK, Bit 3 = Datum OK
+VAR_second      DB  0   ;Second/Bit counter
+VAR_flankcnt    DB  0   ;Flank counter
+VAR_synced      DB  1   ;Sync flag -> 0 if synchronized
+VAR_dataok      DB  0   ;Parity check -> Bit 1 = Minutes OK, Bit 2 = Hours OK, Bit 3 = Date OK
 
 VAR_minutes     DB  0
 VAR_hours       DB  0
@@ -41,7 +41,7 @@ VAR_tmpday      DB  0
 VAR_tmpweekday  DB  0
 VAR_tmpmonth    DB  0
 
-VAR_timerhandle DB  0   ;Adresse des Timerhandles
+VAR_timerhandle DB  0   ;Address of timerinterrupt-handle
 
 ;-------------------------------------;
 ; begin of assembly code
@@ -50,64 +50,64 @@ codestart
 #include <library.hsm>
 
 initfunc
-;Aktiviere Hardware-Interrupt (IRQ7)
+;Enable hardware-interrupt (IRQ7)
         LDA  #CON_INT
         LPT  #dcf77
         JSR  (KERN_IC_SETVECTOR)
         JSR  (KERN_IC_ENABLEINT)
         
-;Aktiviere Timer-Interrupt
+;Enable timer-interrupt
         CLA    
         LPT  #timer
         JSR  (KERN_MULTIPLEX)
         STAA VAR_timerhandle  ;Adresse des Timer Handlers in Variable speichern
 
-;Zeropage Variablen initialisieren
-        FLG  ZP_temp1   ;Interrupt Flag
-        FLG  ZP_temp1+1 ;Impulszeit
-        FLG  ZP_temp2   ;Temporäre Daten
+;Initialize zeropage variables
+        FLG  ZP_temp1   ;Hardware-interrupt flag
+        FLG  ZP_temp1+1 ;Time between two flanks
+        FLG  ZP_temp2   ;Temp data
         FLG  ZP_temp2+1 ;Reserve       
         CLA
         RTS
                
 termfunc  
-        ;Timer Interrupt deaktivieren
+        ;Disable timer-interrupt
         LDA  #1
         LDXA VAR_timerhandle      
         JSR (KERN_MULTIPLEX)
-        ;Hardware Interrupt deaktivieren
+        ;Disable hardware-interrupt
         LDA #CON_INT
         JSR (KERN_IC_DISABLEINT)
         RTS
      
 funcdispatch
         DEC
-        JPZ func_getSeconds     ;Funktion 01h  
+        JPZ func_getSeconds     ;Function 01h  
         DEC 
-        JPZ func_getMinutes     ;Funktion 02h         
+        JPZ func_getMinutes     ;Function 02h         
         DEC 
-        JPZ func_getHours       ;Funktion 03h 
+        JPZ func_getHours       ;Function 03h 
         DEC 
-        JPZ func_getDay         ;Funktion 04h   
+        JPZ func_getDay         ;Function 04h   
         DEC 
-        JPZ func_getWeekday     ;Funktion 05h       
+        JPZ func_getWeekday     ;Function 05h       
         DEC 
-        JPZ func_getMonth       ;Funktion 06h      
+        JPZ func_getMonth       ;Function 06h      
         DEC 
-        JPZ func_getYear        ;Funktion 07h 
+        JPZ func_getYear        ;Function 07h 
         DEC 
-        JPZ func_getEntryPoint  ;Funktion 08h
+        JPZ func_getEntryPoint  ;Function 08h
         JMP _failRTS
         
         
-;Funktion '1' = Hole Sekunden (OUTPUT = Accu), Bei Erfolg C = 0 
+;Function '01h' = Get seconds (OUTPUT = Accu), Carry = 0 if successfull
 func_getSeconds
         LDAA VAR_synced
         JNZ _failRTS
         LDAA VAR_second
         JMP _RTS
 
-;Funktion '2' = Hole Minuten (OUTPUT = Accu), Bei Erfolg C = 0          
+;Function '02h' = Get minutes (OUTPUT = Accu), Carry = 0 if successfull         
 func_getMinutes  
         LDAA VAR_synced
         JNZ _failRTS
@@ -117,7 +117,7 @@ func_getMinutes
         LDAA VAR_minutes
         JMP _RTS
         
-;Funktion '3' = Hole Stunden (OUTPUT = Accu), Bei Erfolg C = 0 
+;Function '03h' = Get hours (OUTPUT = Accu), Carry = 0 if successfull 
 func_getHours
         LDAA VAR_synced
         JNZ _failRTS
@@ -127,7 +127,7 @@ func_getHours
         LDAA VAR_hours
         JMP _RTS        
        
-;Funktion '4' = Hole Kalendertag (OUTPUT = Accu), Bei Erfolg C = 0 
+;Function '04h' = Get day (OUTPUT = Accu), Carry = 0 if successfull 
 func_getDay
         LDAA VAR_synced
         JNZ _failRTS
@@ -137,7 +137,8 @@ func_getDay
         LDAA VAR_day
         JMP _RTS    
         
-;Funktion '5' = Hole Wochentag (OUTPUT = Accu), Bei Erfolg C = 0 
+;Function '05h' = Get weekday (OUTPUT = Accu), Carry = 0 if successfull 
+;1 = monday, 2 = tuesday, 3 = wednesday, 4 = thursday, 5 = friday, 6 = saturday, 7 = sunday
 func_getWeekday
         LDAA VAR_synced
         JNZ _failRTS
@@ -147,7 +148,7 @@ func_getWeekday
         LDAA VAR_weekday
         JMP _RTS   
 
-;Funktion '6' = Hole Monat (OUTPUT = Accu), Bei Erfolg C = 0 
+;Function '06h' = Get month (OUTPUT = Accu), Carry = 0 if successfull 
 func_getMonth
         LDAA VAR_synced
         JNZ _failRTS
@@ -157,7 +158,7 @@ func_getMonth
         LDAA VAR_month
         JMP _RTS     
         
-;Funktion '7' = Hole Jahr (OUTPUT = Accu), Bei Erfolg C = 0 
+;Function '07h' = Get year (OUTPUT = Accu), Carry = 0 if successfull 
 func_getYear
         LDAA VAR_synced
         JNZ _failRTS
@@ -167,31 +168,31 @@ func_getYear
         LDAA VAR_year
         JMP _RTS
 
-;Funktion '8' = Hole Einstiegsadresse der Library         
+;Function '08h' = Get entrypoint of library         
 func_getEntryPoint
         LPT #funcdispatch
         JMP _RTS
 
 ;--------------------------------------------------------- 
-;Interrupt Routinen   
+;Interrupt routines   
 ;---------------------------------------------------------       
        
-;Empfänger Interrupt        
+;Receiver interrupt        
 dcf77
-        MOV ZP_temp1, #1    ;Flanke erkannt -> Flag setzen
-        INCA VAR_flankcnt   ;Flanken zählen (Signalüberprüfung)
+        MOV ZP_temp1, #1    ;Flank detected -> Set flag
+        INCA VAR_flankcnt   ;Count flanks (For signal-error-detection)
         RTS       
         
-;Timer Interrupt
+;Timer interrupt
 timer
         LDA ZP_temp1
         JNZ impCtrl       
-        ;Impulszeit messen
+        ;Measure time between two flanks
         INC ZP_temp1+1
         RTS
 
 ;--------------------------------------------------------- 
-;Impuls Decodierung   
+;DCF77 decoding   
 ;---------------------------------------------------------
 
 ;Mit DCF77-Signal Synchronisieren -> 59. Sekunde ermitteln
