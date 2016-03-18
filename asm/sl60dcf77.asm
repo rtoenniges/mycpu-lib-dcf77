@@ -60,7 +60,7 @@ initfunc
         CLA    
         LPT  #timer
         JSR  (KERN_MULTIPLEX)
-        STAA VAR_timerhandle  ;Adresse des Timer Handlers in Variable speichern
+        STAA VAR_timerhandle  ;Save adress of timerhandle
 
 ;Initialize zeropage variables
         FLG  ZP_temp1   ;Hardware-interrupt flag
