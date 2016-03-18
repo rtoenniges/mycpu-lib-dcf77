@@ -18,10 +18,10 @@
 ZP_temp1        EQU  10h
 ZP_temp2        EQU  12h
 
-;Konstanten
+;Constants
 CON_INT         EQU 7   ;IRQ7
 
-;Variablen
+;Variables
 VAR_second      DB  0   ;Aktuelle Sekunde -> Aktuelles Bit
 VAR_flankcnt    DB  0   ;Flankenzähler
 VAR_synced      DB  1   ;Wird bei erfolgreicher Synchronisation auf 0 gesetzt
