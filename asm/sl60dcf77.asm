@@ -2,7 +2,7 @@
 ;******************************************
 ;***********  DCF77 Library  **************
 ;******************************************
-;******  by Robin Tönniges (2016)  ********
+;******  by Robin TÃ¶nniges (2016)  ********
 ;******************************************
 
 #include <sys.hsm>
@@ -23,7 +23,7 @@ CON_INT         EQU 7   ;IRQ7
 
 ;Variablen
 VAR_second      DB  0   ;Aktuelle Sekunde -> Aktuelles Bit
-VAR_flankcnt    DB  0   ;Flankenzähler
+VAR_flankcnt    DB  0   ;FlankenzÃ¤hler
 VAR_synced      DB  1   ;Wird bei erfolgreicher Synchronisation auf 0 gesetzt
 VAR_dataok      DB  0   ;Bit 1 = Minuten OK, Bit 2 = Stunden OK, Bit 3 = Datum OK
 
@@ -65,7 +65,7 @@ initfunc
 ;Zeropage Variablen initialisieren
         FLG  ZP_temp1   ;Interrupt Flag
         FLG  ZP_temp1+1 ;Impulszeit
-        FLG  ZP_temp2   ;Temporäre Daten
+        FLG  ZP_temp2   ;TemporÃ¤re Daten
         FLG  ZP_temp2+1 ;Reserve       
         CLA
         RTS
@@ -176,10 +176,10 @@ func_getEntryPoint
 ;Interrupt Routinen   
 ;---------------------------------------------------------       
        
-;Empfänger Interrupt        
+;EmpfÃ¤nger Interrupt        
 dcf77
         MOV ZP_temp1, #1    ;Flanke erkannt -> Flag setzen
-        INCA VAR_flankcnt   ;Flanken zählen (Signalüberprüfung)
+        INCA VAR_flankcnt   ;Flanken zÃ¤hlen (SignalÃ¼berprÃ¼fung)
         RTS       
         
 ;Timer Interrupt
@@ -200,7 +200,7 @@ impCtrl
         LDA ZP_temp1+1
         SBC #50  
         JNC imp_1
-        ;Impulszeit >= 50 -> Länger als 1 Sekunde Pause
+        ;Impulszeit >= 50 -> LÃ¤nger als 1 Sekunde Pause
 ;Signal synchron
         CLA 
         STAA VAR_synced
@@ -208,14 +208,14 @@ impCtrl
         STAA VAR_flankcnt
         JMP imp_end
      
-;Sekunden zählen, Signal überprüfen   
+;Sekunden zÃ¤hlen, Signal Ã¼berprÃ¼fen   
 imp_1   CLC
         LDA ZP_temp1+1
         SBC #20  
-        JNC imp_2 ;Impulszeit < 20 -> Nächstes Bit
-        ;Impulszeit >= 20 -> Nächste Sekunde
+        JNC imp_2 ;Impulszeit < 20 -> NÃ¤chstes Bit
+        ;Impulszeit >= 20 -> NÃ¤chste Sekunde
         INCA VAR_second
-        ;Signal überpüfen -> Doppelt so viele Flanken wie Sekunden?
+        ;Signal Ã¼berpÃ¼fen -> Doppelt so viele Flanken wie Sekunden?
         LDAA VAR_flankcnt
         DIV #2
         CMPA VAR_second
@@ -290,14 +290,14 @@ imp_6   LDA ZP_temp1+1
         PHA
         LDAA VAR_second
         CMP #28
-        JPZ imp_5 ;Letze Bit -> Parität
+        JPZ imp_5 ;Letze Bit -> ParitÃ¤t
         PLA
         ORA ZP_temp2
         SHR
         STA ZP_temp2
         JMP imp_end
 
-;Parität überprüfen        
+;ParitÃ¤t Ã¼berprÃ¼fen        
 imp_5   LDA ZP_temp2  
         LDX #7
         CLY
@@ -315,7 +315,7 @@ par_0   PLA ;Anzahl Bits = "gerade"
         EORA VAR_dataok
         STAA VAR_dataok
         JMP imp_end
-par_1   LDA ZP_temp2 ;Parität OK
+par_1   LDA ZP_temp2 ;ParitÃ¤t OK
         JSR bcdToDec
         STAA VAR_tmpminutes
         LDA #1
@@ -336,14 +336,14 @@ imp_9   LDA ZP_temp1+1
         PHA
         LDAA VAR_second
         CMP #35
-        JPZ imp_8 ;Letze Bit -> Parität
+        JPZ imp_8 ;Letze Bit -> ParitÃ¤t
         PLA
         ORA ZP_temp2
         SHR
         STA ZP_temp2 
         JMP imp_end
 
-;Parität überprüfen         
+;ParitÃ¤t Ã¼berprÃ¼fen         
 imp_8   SHR ZP_temp2 ;Letze Bit -> Um 1 nach rechts schieben
         LDA ZP_temp2  
         LDX #6
@@ -362,7 +362,7 @@ par_2   PLA ;Anzahl Bits = "gerade"
         EORA VAR_dataok
         STAA VAR_dataok
         JMP imp_end
-par_3   LDA ZP_temp2 ;Parität OK
+par_3   LDA ZP_temp2 ;ParitÃ¤t OK
         JSR bcdToDec
         STAA VAR_tmphours
         LDA #2
@@ -384,7 +384,7 @@ imp_11  LDA ZP_temp1+1
         SHR
         STA ZP_temp2  
       
-;High Bits zählen
+;High Bits zÃ¤hlen
         LDAA VAR_second
         CMP #41       
         JNZ imp_end 
@@ -411,7 +411,7 @@ imp_13  LDA ZP_temp1+1
         ORA ZP_temp2
         SHR
         STA ZP_temp2       
-;High Bits zählen
+;High Bits zÃ¤hlen
         LDAA VAR_second
         CMP #44       
         JNZ imp_end 
@@ -441,7 +441,7 @@ imp_15  LDA ZP_temp1+1
         SHR
         STA ZP_temp2 
         
-;High Bits zählen
+;High Bits zÃ¤hlen
         LDAA VAR_second
         CMP #49       
         JNZ imp_end 
@@ -470,14 +470,14 @@ imp_18  LDA ZP_temp1+1
         PHA
         LDAA VAR_second
         CMP #58
-        JPZ imp_17 ;Letze Bit -> Parität
+        JPZ imp_17 ;Letze Bit -> ParitÃ¤t
         PLA
         ORA ZP_temp2
         SHR
         STA ZP_temp2 
         JMP imp_end
 
-;Parität für das komplette Datum überprüfen         
+;ParitÃ¤t fÃ¼r das komplette Datum Ã¼berprÃ¼fen         
 imp_17  SHL ZP_temp2 ;Letze Bit -> Um 1 nach links schieben
         LDA ZP_temp2
         LDX #8
@@ -496,24 +496,24 @@ par_4   PLA ;Anzahl Bits = "gerade"
         EORA VAR_dataok
         STAA VAR_dataok
         JMP imp_end
-par_5   LDA ZP_temp2 ;Parität OK
-        JSR bcdToDec ;Jahr übernehmen
+par_5   LDA ZP_temp2 ;ParitÃ¤t OK
+        JSR bcdToDec ;Jahr Ã¼bernehmen
         STAA VAR_year
-        LDAA VAR_tmpminutes ;Minuten übernehmen
+        LDAA VAR_tmpminutes ;Minuten Ã¼bernehmen
         STAA VAR_minutes
-        LDAA VAR_tmphours ;Stunden übernehmen
+        LDAA VAR_tmphours ;Stunden Ã¼bernehmen
         STAA VAR_hours
-        LDAA VAR_tmpday ;Tag übernehmen
+        LDAA VAR_tmpday ;Tag Ã¼bernehmen
         STAA VAR_day
-        LDAA VAR_tmpweekday ;Wochentag übernehmen
+        LDAA VAR_tmpweekday ;Wochentag Ã¼bernehmen
         STAA VAR_weekday
-        LDAA VAR_tmpmonth ;Monat übernehmen
+        LDAA VAR_tmpmonth ;Monat Ã¼bernehmen
         STAA VAR_month
         LDA #4
         ORAA VAR_dataok
         STAA VAR_dataok
       
-;Auf nächste Flanke warten
+;Auf nÃ¤chste Flanke warten
 imp_end
         MOV ZP_temp1, #0
         MOV ZP_temp1+1, #0
@@ -523,7 +523,7 @@ imp_end
 ;Hilfsfunktionen   
 ;---------------------------------------------------------
 
-;Information aus Impulszeit dekodieren (Input: A = Impuzlszähler) (Output: A = High(80h), Low(00h))        
+;Information aus Impulszeit dekodieren (Input: A = ImpuzlszÃ¤hler) (Output: A = High(80h), Low(00h))        
 getBit
         CLC       
         SBC #3
@@ -535,7 +535,7 @@ get_0   CLA ;Impulszeit < 3 -> Bit = 0
         RTS
         
         
-;High Bits zählen (Input: A = Byte, X=Anzahl Bits, Y=Zähler offset) (Output: A=Anzahl, C=0 -> Ungerade, C=1 -> Gerade)        
+;High Bits zÃ¤hlen (Input: A = Byte, X=Anzahl Bits, Y=ZÃ¤hler offset) (Output: A=Anzahl, C=0 -> Ungerade, C=1 -> Gerade)        
 bitCnt
 cnt_0   SHR
         JNC cnt_1
