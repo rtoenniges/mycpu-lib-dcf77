@@ -19,7 +19,7 @@ ZP_temp1        EQU  10h
 ZP_temp2        EQU  12h
 
 ;Constants
-CON_INT         EQU 7   ;IRQ7
+CON_INT         EQU 7   ;IRQ7 
 
 ;Variables
 VAR_second      DB  0   ;Second/Bit counter
