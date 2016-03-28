@@ -555,7 +555,7 @@ cnt_3   PLA
         RTS
         
         
-;Translate BCD in decimal (Input: A = BCD value) (Output: A = decimal vlaue)       
+;Convert BCD to decimal (Input: A = BCD value) (Output: A = decimal vlaue)       
 bcdToDec
         PHA
         DIV #10h
