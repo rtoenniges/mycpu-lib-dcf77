@@ -37,12 +37,16 @@ VAR_day         DB 0
 VAR_month       DB 0
 VAR_year        DB 0
 
-;Program start
+
+;--------------------------------------------------------- 
+;Main program  
+;---------------------------------------------------------
 codestart
 
 main    
-        FLG ZP_paramPtr
+        FLG ZP_paramPtr ;Initialize zeropointer
 
+;Get parameter from console
 skipPar LPA
         JPZ setSysTime
         CMP #20h
@@ -50,16 +54,17 @@ skipPar LPA
 
 _skp0   SPT ZP_paramPtr
         LPA
-        JPZ setSysTime
+        JPZ setSysTime  ;No parameter -> set system clock
         CMP #20h
         JPZ _skp0
         
         LPT ZP_paramPtr
         JSR (KERN_STRING2NUMBER)
         CMP #8
-        JPZ printTime
+        JPZ printTime   ;Parameter '8' -> print date/time
         PHA   
-        
+
+;Parameter 0-7 -> Print data from library        
         LDA #DCF77LIB
         JSR  (KERN_LIBSELECT)        
         PLA
@@ -174,6 +179,12 @@ printTime
         CLA
         RTS
 
+
+;--------------------------------------------------------- 
+;Helper functions   
+;---------------------------------------------------------
+
+;Print leading zero for date and time <10
 leadingZero
         PHA
         CLC
