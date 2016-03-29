@@ -10,8 +10,6 @@
 #include <code.hsm>
 #include <interrupt.hsm>
 
-;Comment this line out if you dont want synced status on Multi-I/O-LEDs
-#DEFINE SYNC_DISP 
 
 ;-------------------------------------;
 ; declare variables
@@ -21,8 +19,7 @@ ZP_temp1        EQU  10h
 ZP_temp2        EQU  12h
 
 ;Constants
-CON_INT             EQU 7   ;IRQ7 
-KERN_IOCHANGELED    EQU 0306h
+CON_INT         EQU 7   ;IRQ7 
 
 ;Variables
 VAR_second      DB  0   ;Second/Bit counter
@@ -45,10 +42,6 @@ VAR_tmpweekday  DB  0
 VAR_tmpmonth    DB  0
 
 VAR_timerhandle DB  0   ;Address of timerinterrupt-handle
-
-#IFDEF SYNC_DISP
-VAR_leds        DB 01h
-#ENDIF
 
 ;-------------------------------------;
 ; begin of assembly code
@@ -73,16 +66,9 @@ initfunc
         FLG  ZP_temp1   ;Hardware-interrupt flag
         FLG  ZP_temp1+1 ;Time between two flanks (Value * 1/30.517578Hz)
         FLG  ZP_temp2   ;Temp data
-        FLG  ZP_temp2+1 ;Reserve    
-
-;If sync display enabled set leds to 01h  
-#IFDEF SYNC_DISP
-        LDAA VAR_leds
-        JSR (KERN_IOCHANGELED)
-#ENDIF   
+        FLG  ZP_temp2+1 ;Reserve       
         CLA
         RTS
-      
                
 termfunc  
         ;Disable timer-interrupt
@@ -230,15 +216,11 @@ imp_1   CLC
         JNC imp_2 ;Flanktime < 20 -> Next bit
         ;Flanktime >= 20 -> Next second
         INCA VAR_second
-#IFDEF SYNC_DISP
-        JSR syncDisp
-#ENDIF    
         ;Signal checking -> Twice as many flanks as seconds?
         LDAA VAR_flankcnt
         DIV #2
         CMPA VAR_second
         JPZ imp_end
-        
 ;No longer synchronized        
 DeSync  LDA #1 
         STAA VAR_synced
@@ -538,22 +520,6 @@ imp_end
         MOV ZP_temp1+1, #0
         RTS
 
-;--------------------------------------------------------- 
-;Display moving light if synchronized on Multi-I/O LEDs   
-;---------------------------------------------------------
-#IFDEF SYNC_DISP
-syncDisp
-        LDAA VAR_synced
-        JNZ sd_1
-        SHLA VAR_leds
-        LDAA VAR_leds
-        CMP #10h
-        JNZ sd_0
-        LDA #01h
-        STAA VAR_leds
-sd_0    JSR (KERN_IOCHANGELED)
-sd_1    RTS
-#ENDIF
 ;--------------------------------------------------------- 
 ;Helper functions   
 ;---------------------------------------------------------

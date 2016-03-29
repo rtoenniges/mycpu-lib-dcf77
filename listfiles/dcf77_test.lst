@@ -2,7 +2,7 @@
                 ;~~  [MyCA] Macro Cross Assembler V1.0 for MyCPU, (c) 2015 by Dennis Kuschel  ~~
                 ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-                ;[File: C:\Users\Robin\Documents\GitHub\MyCPU_LIB_DCF77\asm\dcf77_test.asm]
+                ;[File: C:\Users\Robin\Desktop\MyCPU\software\asm\dcf77_test.asm]
                 ;[ASCII]
                 ;******************************************
                 ;****  DCF77 Library - Test program *******
@@ -30,7 +30,7 @@
     8004 0000    DW 0
     8006 5B80    DW codestart
                 
-                ;[File: C:\Users\Robin\Documents\GitHub\MyCPU_LIB_DCF77\asm\dcf77_test.asm]
+                ;[File: C:\Users\Robin\Desktop\MyCPU\software\asm\dcf77_test.asm]
                 ;[File: D:\Program Files (x86)\myca\include\ctype.hsm]
                 ;[ASCII]
                 
@@ -41,7 +41,7 @@
                 KERN_ASCIIPETSCII   EQU 0256h
                 KERN_STRING2NUMBER  EQU 0262h
                 
-                ;[File: C:\Users\Robin\Documents\GitHub\MyCPU_LIB_DCF77\asm\dcf77_test.asm]
+                ;[File: C:\Users\Robin\Desktop\MyCPU\software\asm\dcf77_test.asm]
                 ;[File: D:\Program Files (x86)\myca\include\conio.hsm]
                 ;[ASCII]
                 
@@ -85,7 +85,7 @@
                 INPUTFLAG_TABKEY    SET 10h
                 INPUTFLAG_NOBORDER  SET 20h
                 
-                ;[File: C:\Users\Robin\Documents\GitHub\MyCPU_LIB_DCF77\asm\dcf77_test.asm]
+                ;[File: C:\Users\Robin\Desktop\MyCPU\software\asm\dcf77_test.asm]
                 ;[File: D:\Program Files (x86)\myca\include\time.hsm]
                 ;[ASCII]
                 
@@ -94,7 +94,7 @@
                 
                 KERN_INSDELTIMER    EQU 02AAh
                 
-                ;[File: C:\Users\Robin\Documents\GitHub\MyCPU_LIB_DCF77\asm\dcf77_test.asm]
+                ;[File: C:\Users\Robin\Desktop\MyCPU\software\asm\dcf77_test.asm]
                 ;[File: D:\Program Files (x86)\myca\include\code.hsm]
                 ;[ASCII]
                 
@@ -115,7 +115,7 @@
                 
                 REG_ROMPAGE  SET 3900h
                 
-                ;[File: C:\Users\Robin\Documents\GitHub\MyCPU_LIB_DCF77\asm\dcf77_test.asm]
+                ;[File: C:\Users\Robin\Desktop\MyCPU\software\asm\dcf77_test.asm]
                 ;Declare variables
                 DCF77LIB        EQU 60h
                 
@@ -156,15 +156,12 @@
     8059 00     VAR_month       DB 0
     805A 00     VAR_year        DB 0
                 
-                ;--------------------------------------------------------- 
-                ;Main program  
-                ;---------------------------------------------------------
+                ;Program start
                 codestart
                 
                 main    
-    805B 3C00           FLG ZP_paramPtr ;Initialize zeropointer
+    805B 3C00           FLG ZP_paramPtr
                 
-                ;Get parameter from console
     805D EA     skipPar LPA
     805E 198F80         JPZ setSysTime
     8061 7020           CMP #20h
@@ -172,17 +169,16 @@
                 
     8066 6F00   _skp0   SPT ZP_paramPtr
     8068 EA             LPA
-    8069 198F80         JPZ setSysTime  ;No parameter -> set system clock
+    8069 198F80         JPZ setSysTime
     806C 7020           CMP #20h
     806E 196680         JPZ _skp0
                 
     8071 5F00           LPT ZP_paramPtr
     8073 1B6202         JSR (KERN_STRING2NUMBER)
     8076 7008           CMP #8
-    8078 19F880         JPZ printTime   ;Parameter '8' -> print date/time
+    8078 19F880         JPZ printTime
     807B 08             PHA   
                 
-                ;Parameter 0-7 -> Print data from library        
     807C 3060           LDA #DCF77LIB
     807E 1BCC02         JSR  (KERN_LIBSELECT)        
     8081 0C             PLA
@@ -297,11 +293,6 @@
     8173 2C             CLA
     8174 1F             RTS
                 
-                ;--------------------------------------------------------- 
-                ;Helper functions   
-                ;---------------------------------------------------------
-                
-                ;Print leading zero for date and time <10
                 leadingZero
     8175 08             PHA
     8176 04             CLC
