@@ -21,8 +21,10 @@ ZP_temp1        EQU  10h
 ZP_temp2        EQU  12h
 
 ;Constants
-CON_INT             EQU 7   ;IRQ7 
+HDW_INT             EQU 7       ;IRQ7 
 KERN_IOCHANGELED    EQU 0306h
+;MAX_TIMER_HANDLER   EQU 8
+;TIMER_HANDL_STRUCT  EQU 8
 
 ;Variables
 VAR_second      DB  0   ;Second/Bit counter
@@ -46,6 +48,12 @@ VAR_tmpmonth    DB  0
 
 VAR_timerhandle DB  0   ;Address of timerinterrupt-handle
 
+
+;VAR_handlerarray    DS  MAX_TIMER_HANDLER * TIMER_HANDL_STRUCT
+                      ;a struct has 8 bytes:
+                      ;DW ptrNextStruct, DW timerAddr, DW handlerAddr-1,
+                      ;DB rampage, DB rompage
+
 #IFDEF SYNC_DISP
 VAR_leds        DB 01h
 #ENDIF
@@ -58,7 +66,7 @@ codestart
 
 initfunc
 ;Enable hardware-interrupt (IRQ7)
-        LDA  #CON_INT
+        LDA  #HDW_INT
         LPT  #dcf77
         JSR  (KERN_IC_SETVECTOR)
         JSR  (KERN_IC_ENABLEINT)
@@ -90,8 +98,13 @@ termfunc
         LDXA VAR_timerhandle      
         JSR (KERN_MULTIPLEX)
         ;Disable hardware-interrupt
-        LDA #CON_INT
+        LDA #HDW_INT
         JSR (KERN_IC_DISABLEINT)
+        ;Set LEDs to default
+#IFDEF SYNC_DISP
+        LDA  #0FFh
+        JSR  (KERN_IOCHANGELED)
+#ENDIF
         RTS
      
 funcdispatch
@@ -211,12 +224,11 @@ timer
 
 ;Synchronize with signal -> Detect 59th second
 impCtrl 
-        CLC
         LDA ZP_temp1+1
-        SBC #50  
-        JNC imp_1
+        CMP #50  
+        JNC imp_1 ;Flanktime < 50 -> New second or bit information
         ;Flanktime >= 50 -> Time longer than 1 second
-;Signal synchron
+;Syncpoint reached
         CLA 
         STAA VAR_synced
         STAA VAR_second
@@ -224,9 +236,7 @@ impCtrl
         JMP imp_end
      
 ;Count seconds, Check signal for errors   
-imp_1   CLC
-        LDA ZP_temp1+1
-        SBC #20  
+imp_1   CMP #20  
         JNC imp_2 ;Flanktime < 20 -> Next bit
         ;Flanktime >= 20 -> Next second
         INCA VAR_second
@@ -258,39 +268,26 @@ imp_2   LDAA VAR_second
 imp_3   LDAA VAR_synced
         JNZ imp_end
         ;Only continue if synchronized
-        CLC
         LDAA VAR_second
-        SBC #20
+        CMP #21
         JNC imp_end 
         ;Second >= 21
-        CLC
-        LDAA VAR_second
-        SBC #28
+        CMP #29
         JNC imp_4 ;Go to minute decoding
         ;Second >= 29
-        CLC
-        LDAA VAR_second
-        SBC #35
+        CMP #36
         JNC imp_7 ;Go to hour decoding
         ;Second >= 36
-        CLC
-        LDAA VAR_second
-        SBC #41
+        CMP #42
         JNC imp_10 ;Go to day decoding
         ;Second >= 42
-        CLC
-        LDAA VAR_second
-        SBC #44
+        CMP #45
         JNC imp_12 ;Go to weekday decoding
         ;Second >= 45
-        CLC
-        LDAA VAR_second
-        SBC #49
+        CMP #50
         JNC imp_14 ;Go to month decoding
         ;Second >= 50
-        CLC
-        LDAA VAR_second
-        SBC #58
+        CMP #59
         JNC imp_16 ;Go to year decoding
         ;Second >= 59
         JMP imp_end
@@ -301,7 +298,7 @@ imp_3   LDAA VAR_synced
 imp_4   LDAA VAR_second
         CMP #21
         JNZ imp_6
-        MOV ZP_temp2, #0
+        MOV ZP_temp2, #0 ;First Bit -> Clear "ZP_temp2"
 
 ;Get bit
 imp_6   LDA ZP_temp1+1
@@ -324,30 +321,28 @@ imp_5   LDA ZP_temp2
         JPC par_0   
         PLA ;Bit count = "unequal"
         JNZ par_1
-        LDA #1
-        EORA VAR_dataok
-        STAA VAR_dataok
-        JMP imp_end
+        JMP par_2
 par_0   PLA ;Bit count = "equal"
         JPZ par_1
-        LDA #1
-        EORA VAR_dataok
-        STAA VAR_dataok
-        JMP imp_end
+        JMP par_2
 par_1   LDA ZP_temp2 ;Parity OK
         JSR bcdToDec
         STAA VAR_tmpminutes
-        LDA #1
+        LDA #01h
         ORAA VAR_dataok
         STAA VAR_dataok
         JMP imp_end
-
+par_1a  LDA #06h ;Partity n.OK
+        ANDA VAR_dataok
+        STAA VAR_dataok
+        JMP imp_end
+        
     
 ;Decode hours
 imp_7   LDAA VAR_second
         CMP #29
         JNZ imp_9
-        MOV ZP_temp2, #0
+        MOV ZP_temp2, #0 ;First Bit -> Clear "ZP_temp2"
 
 ;Get
 imp_9   LDA ZP_temp1+1
@@ -371,30 +366,28 @@ imp_8   SHR ZP_temp2 ;Shift hour-byte right by 1
         JPC par_2   
         PLA ;Bit count = "unqual"
         JNZ par_3
-        LDA #2
-        EORA VAR_dataok
-        STAA VAR_dataok
-        JMP imp_end
+        JMP par_3a
 par_2   PLA ;Bit count = "equal"
         JPZ par_3
-        LDA #2
-        EORA VAR_dataok
-        STAA VAR_dataok
-        JMP imp_end
+        JMP par_3a
 par_3   LDA ZP_temp2 ;Parity OK
         JSR bcdToDec
         STAA VAR_tmphours
-        LDA #2
+        LDA #02h
         ORAA VAR_dataok
+        STAA VAR_dataok
+        JMP imp_end
+par_3a  LDA #05h ;Partity n.OK
+        ANDA VAR_dataok
         STAA VAR_dataok
         JMP imp_end
         
         
 ;Decode day
 imp_10  LDAA VAR_second
-        CMP #36
+        CMP #36 
         JNZ imp_11
-        MOV ZP_temp2, #0
+        MOV ZP_temp2, #0 ;First Bit -> Clear "ZP_temp2"
   
 ;Get bit      
 imp_11  LDA ZP_temp1+1
@@ -423,7 +416,7 @@ imp_11  LDA ZP_temp1+1
 imp_12  LDAA VAR_second
         CMP #42
         JNZ imp_13
-        MOV ZP_temp2, #0
+        MOV ZP_temp2, #0 ;First Bit -> Clear "ZP_temp2"
         
 imp_13  LDA ZP_temp1+1
         JSR getBit
@@ -451,7 +444,7 @@ imp_13  LDA ZP_temp1+1
 imp_14  LDAA VAR_second
         CMP #45
         JNZ imp_15
-        MOV ZP_temp2, #0
+        MOV ZP_temp2, #0 ;First Bit -> Clear "ZP_temp2"
         
 ;Get bit 
 imp_15  LDA ZP_temp1+1
@@ -481,7 +474,7 @@ imp_15  LDA ZP_temp1+1
 imp_16  LDAA VAR_second
         CMP #50
         JNZ imp_18
-        MOV ZP_temp2, #0
+        MOV ZP_temp2, #0 ;First Bit -> Clear "ZP_temp2"
 
 ;Get bit
 imp_18  LDA ZP_temp1+1
@@ -505,16 +498,10 @@ imp_17  SHL ZP_temp2 ;Shift year-byte left by 1
         JPC par_4   
         PLA ;Bit count = "unqual"
         JNZ par_5
-        LDA #4
-        EORA VAR_dataok
-        STAA VAR_dataok
-        JMP imp_end
+        JMP par_5a
 par_4   PLA ;Bit count = "equal"
         JPZ par_5
-        LDA #4
-        EORA VAR_dataok
-        STAA VAR_dataok
-        JMP imp_end
+        JMP par_5a
 par_5   LDA ZP_temp2 ;Parity OK
         JSR bcdToDec ;Take over 'year'
         STAA VAR_year
@@ -528,9 +515,14 @@ par_5   LDA ZP_temp2 ;Parity OK
         STAA VAR_weekday
         LDAA VAR_tmpmonth ;Take over 'month'
         STAA VAR_month
-        LDA #4
+        LDA #04h
         ORAA VAR_dataok
         STAA VAR_dataok
+        JMP imp_end
+par_5a  LDA #03h ;Partity n.OK
+        ANDA VAR_dataok
+        STAA VAR_dataok
+        JMP imp_end
       
 ;Wait for next flank
 imp_end
@@ -559,14 +551,13 @@ sd_1    RTS
 ;---------------------------------------------------------
 
 ;Get bit information from Flanktime (Input: A = Flanktime) (Output: A = High(80h), Low(00h))        
-getBit
-        CLC       
-        SBC #3
+getBit      
+        CMP #4
         JNC get_0
-        ;Flanktime >= 3 -> Bit = 1
+        ;Flanktime >= 4 -> Bit = 1
         LDA #80h
         RTS
-get_0   CLA ;Flanktime < 3 -> Bit = 0
+get_0   CLA ;Flanktime < 4 -> Bit = 0
         RTS
         
         
