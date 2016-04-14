@@ -65,6 +65,11 @@ codestart
 #include <library.hsm>
 
 initfunc
+;Move this program to a separate memory page
+        LPT  #codestart
+        LDA  #0Eh
+        JSR  (KERN_MULTIPLEX)
+        
 ;Enable hardware-interrupt (IRQ7)
         LDA  #HDW_INT
         LPT  #dcf77
