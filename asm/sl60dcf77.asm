@@ -55,7 +55,8 @@ VAR_timerhandle DB  0   ;Address of timerinterrupt-handle
                       ;DB rampage, DB rompage
 
 #IFDEF SYNC_DISP
-VAR_leds        DB 01h
+VAR_ledsSync    DB 01h
+VAR_ledsDataOK   DB 09h
 #ENDIF
 
 ;-------------------------------------;
@@ -65,10 +66,6 @@ codestart
 #include <library.hsm>
 
 initfunc
-;Move this program to a separate memory page
-        LPT  #codestart
-        LDA  #0Eh
-        JSR  (KERN_MULTIPLEX)
         
 ;Enable hardware-interrupt (IRQ7)
         LDA  #HDW_INT
@@ -88,14 +85,13 @@ initfunc
         FLG  ZP_temp2   ;Temp data
         FLG  ZP_temp2+1 ;Reserve    
 
-;If sync display enabled set leds to 01h  
+;If sync display enabled clear LEDs 
 #IFDEF SYNC_DISP
-        LDAA VAR_leds
+        CLA
         JSR (KERN_IOCHANGELED)
 #ENDIF   
         CLA
         RTS
-      
                
 termfunc  
         ;Disable timer-interrupt
@@ -234,10 +230,9 @@ impCtrl
         JNC imp_1 ;Flanktime < 50 -> New second or bit information
         ;Flanktime >= 50 -> Time longer than 1 second
 ;Syncpoint reached
-        CLA 
-        STAA VAR_synced
-        STAA VAR_second
-        STAA VAR_flankcnt
+        STZ VAR_synced
+        STZ VAR_second
+        STZ VAR_flankcnt
         JMP imp_end
      
 ;Count seconds, Check signal for errors   
@@ -259,6 +254,7 @@ DeSync  LDA #1
         STAA VAR_synced
         CLA
         STAA VAR_dataok
+        JSR (KERN_IOCHANGELED)
         JMP imp_end
         
 ;Determine datapackets
@@ -541,15 +537,29 @@ imp_end
 #IFDEF SYNC_DISP
 syncDisp
         LDAA VAR_synced
-        JNZ sd_1
-        SHLA VAR_leds
-        LDAA VAR_leds
+        JNZ _RTS
+        LDAA VAR_dataok
+        CMP #7
+        JPZ sd_1
+        LDAA VAR_ledsSync       
         CMP #10h
         JNZ sd_0
         LDA #01h
-        STAA VAR_leds
-sd_0    JSR (KERN_IOCHANGELED)
-sd_1    RTS
+        STAA VAR_ledsSync
+sd_0    JSR (KERN_IOCHANGELED) 
+        SHLA VAR_ledsSync
+        RTS
+
+sd_1    LDAA VAR_ledsDataOK
+        JSR (KERN_IOCHANGELED)
+        LDAA VAR_ledsDataOK
+        SBC #03h
+        CMP #03h
+        JNZ sd_2
+        LDA #09h
+sd_2    STAA VAR_ledsDataOK
+        RTS
+        
 #ENDIF
 ;--------------------------------------------------------- 
 ;Helper functions   
@@ -596,7 +606,6 @@ bcdToDec
         CLC
         ADC ZP_temp2
         STA ZP_temp2
-        RTS
 
 _RTS    
         CLC
