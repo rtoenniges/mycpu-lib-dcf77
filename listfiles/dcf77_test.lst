@@ -1,8 +1,8 @@
-                ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-                ;~~  [MyCA] Macro Cross Assembler V1.0 for MyCPU, (c) 2015 by Dennis Kuschel  ~~
-                ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                ;~~  [MyCA] Macro Cross Assembler V1.05 for MyCPU, (c) 2016 by Dennis Kuschel  ~~
+                ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-                ;[File: C:\Users\Robin\Documents\GitHub\MyCPU_LIB_DCF77\asm\dcf77_test.asm]
+                ;[File: dcf77_test.asm]
                 ;[ASCII]
                 ;******************************************
                 ;****  DCF77 Library - Test program *******
@@ -21,7 +21,7 @@
                 ;***********************************************
                 
                 ;Include
-                ;[File: D:\Program Files (x86)\myca\include\program.hsm]
+                ;[File: C:\Program Files (x86)\myca\include\program.hsm]
                 ;[ASCII]
                 
                 ORG 8000h
@@ -30,8 +30,8 @@
     8004 0000    DW 0
     8006 5B80    DW codestart
                 
-                ;[File: C:\Users\Robin\Documents\GitHub\MyCPU_LIB_DCF77\asm\dcf77_test.asm]
-                ;[File: D:\Program Files (x86)\myca\include\ctype.hsm]
+                ;[File: dcf77_test.asm]
+                ;[File: C:\Program Files (x86)\myca\include\ctype.hsm]
                 ;[ASCII]
                 
                 KERN_ISPRINTABLE    EQU 024Eh
@@ -41,8 +41,8 @@
                 KERN_ASCIIPETSCII   EQU 0256h
                 KERN_STRING2NUMBER  EQU 0262h
                 
-                ;[File: C:\Users\Robin\Documents\GitHub\MyCPU_LIB_DCF77\asm\dcf77_test.asm]
-                ;[File: D:\Program Files (x86)\myca\include\conio.hsm]
+                ;[File: dcf77_test.asm]
+                ;[File: C:\Program Files (x86)\myca\include\conio.hsm]
                 ;[ASCII]
                 
                 ;-- functions --
@@ -85,8 +85,8 @@
                 INPUTFLAG_TABKEY    SET 10h
                 INPUTFLAG_NOBORDER  SET 20h
                 
-                ;[File: C:\Users\Robin\Documents\GitHub\MyCPU_LIB_DCF77\asm\dcf77_test.asm]
-                ;[File: D:\Program Files (x86)\myca\include\time.hsm]
+                ;[File: dcf77_test.asm]
+                ;[File: C:\Program Files (x86)\myca\include\time.hsm]
                 ;[ASCII]
                 
                 KERN_GETSETTIME     EQU 029Ah
@@ -94,8 +94,8 @@
                 
                 KERN_INSDELTIMER    EQU 02AAh
                 
-                ;[File: C:\Users\Robin\Documents\GitHub\MyCPU_LIB_DCF77\asm\dcf77_test.asm]
-                ;[File: D:\Program Files (x86)\myca\include\code.hsm]
+                ;[File: dcf77_test.asm]
+                ;[File: C:\Program Files (x86)\myca\include\code.hsm]
                 ;[ASCII]
                 
                 KERN_ADAPTOPCODES   EQU 02C4h
@@ -115,7 +115,7 @@
                 
                 REG_ROMPAGE  SET 3900h
                 
-                ;[File: C:\Users\Robin\Documents\GitHub\MyCPU_LIB_DCF77\asm\dcf77_test.asm]
+                ;[File: dcf77_test.asm]
                 ;Declare variables
                 DCF77LIB        EQU 60h
                 
@@ -327,7 +327,7 @@ Segment Table:
 **************
 Segment Name                 Startaddr  Endaddr     Size  Type
 =========================================================================
-default                           8000     818D      18D  CODE  fixed
+default                           8000     818C      18D  CODE  fixed
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 No errors found.
