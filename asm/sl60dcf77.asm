@@ -2,7 +2,7 @@
 ;******************************************
 ;***********  DCF77 Library  **************
 ;******************************************
-;******  by Robin Tönniges (2016)  ********
+;******  by Robin Tönniges (2017)  ********
 ;******************************************
 
 #include <sys.hsm>
@@ -10,7 +10,7 @@
 #include <code.hsm>
 #include <interrupt.hsm>
 
-;Comment this line out if you dont want synced status on Multi-I/O-LEDs
+;Comment this lines out if you dont want synced status on Multi-I/O-LEDs
 #DEFINE SYNC_DISP 
 
 ;-------------------------------------;
@@ -22,27 +22,31 @@ ZP_temp1            EQU  10h
 ;Constants
 HDW_INT             EQU 7       ;IRQ7 
 KERN_IOCHANGELED    EQU 0306h
+CONST_SECOND        EQU 30      ;Timer divider for "pseudo second" (30 = 0,983s)
 
-CONST_LOWHIGH       EQU 4       ;Edge time below this point is 0(Low), above means 1(High)
-CONST_SYNCPAUSE     EQU 50      ;Minimum time to recognize the syncpoint
-CONST_SECOND        EQU 20      ;Minimum time to recognize a new second/bit
-;MAX_TIMER_HANDLER   EQU 8
-;TIMER_HANDL_STRUCT  EQU 8
+;Parameter
+PARAM_LOWHIGH       EQU 4       ;Edge time < PARAM_LOWHIGH = 0(Low), >= PARAM_LOWHIGH = 1(High)
+PARAM_SYNCPAUSE     EQU 35      ;Edge time < PARAM_SYNCPAUSE = New second/bit, >= PARAM_SYNCPAUSE = Syncpoint
+PARAM_SECOND        EQU 10      ;Edge time < PARAM_SECOND = New bit, >= PARAM_SECOND = New second
 
 ;Variables
-FLG_dcfReceiver     DB  0   ;This flag is set to 1 if input comes from the DCF77-Receiver
-VAR_second          DB  0   ;Second/Bit counter
+FLG_dcfReceiver     DB  1   ;This flag is set to 1 if input comes from the DCF77-Receiver
 VAR_edgeCnt         DB  0   ;Edge counter
 VAR_synced          DB  1   ;Sync flag -> 0 if synchron with dcf77
 VAR_dataOK          DB  0   ;Parity check -> Bit 1 = Minutes OK, Bit 2 = Hours OK, Bit 3 = Date OK
 
-VAR_minutes         DB  0
-VAR_hours           DB  0
+VAR_pSecond         DB  0   ;Pseudo second to bridge desynchronization
+VAR_second          DB  0   ;DCF77-Second/Bit counter
 
-VAR_day             DB  0
-VAR_weekday         DB  0
-VAR_month           DB  0
-VAR_year            DB  0
+;Time variables initialized with FFh to "lock" the first minute after starting the library
+VAR_minutes         DB  FFh
+VAR_hours           DB  FFh
+
+VAR_day             DB  FFh
+VAR_weekday         DB  FFh
+VAR_month           DB  FFh
+VAR_year            DB  FFh
+
 VAR_dateParity      DB  0
 
 VAR_tmpMinutes      DB  0
@@ -54,15 +58,8 @@ VAR_tmpYear         DB  0
 
 VAR_timerhandle     DB  0   ;Address of timer interrupt handle
 
-;TODO: Create Handler interrupt every second
-;VAR_handlerarray    DS  MAX_TIMER_HANDLER * TIMER_HANDL_STRUCT
-                      ;a struct has 8 bytes:
-                      ;DW ptrNextStruct, DW timerAddr, DW handlerAddr-1,
-                      ;DB rampage, DB rompage
-
 #IFDEF SYNC_DISP
-VAR_ledsSync        DB 01h
-VAR_ledsDataOK      DB 09h
+VAR_ledsDataOK      DB 0
 #ENDIF
 
 ;-------------------------------------;
@@ -74,13 +71,12 @@ codestart
 ;Library handling  
 ;---------------------------------------------------------  
 
-
 ;Library initialization
 ;---------------------------------------------------------   
 initfunc
 
 ;Initialize zeropage variables
-            FLG  ZP_temp1   ;Time between two interrupts (Value * 1/30.517578Hz) 
+            FLG  ZP_temp1   ;Time between two interrupts (Value * 1/30.517578Hz)s 
             FLG  ZP_temp1+1 ;Temporary data
         
 ;Enable hardware interrupt (IRQ7)
@@ -118,8 +114,8 @@ termfunc
             JSR (KERN_SPINLOCK)
             ;Set LEDs to default
 #IFDEF SYNC_DISP
-            LDA  #0FFh
-            JSR  (KERN_IOCHANGELED)
+            LDA #0FFh
+            JSR (KERN_IOCHANGELED)
 #ENDIF
             RTS
 
@@ -143,8 +139,8 @@ funcdispatch
             DEC 
             JPZ func_getEntryPoint  ;Function 08h
             JMP _failRTS
-        
-        
+  
+       
 ;Function '01h' = Get seconds (OUTPUT = Accu), Carry = 0 if successfull
 func_getSeconds
             LDAA VAR_synced
@@ -160,6 +156,8 @@ func_getMinutes
             AND #01h
             JPZ _failRTS
             LDAA VAR_minutes
+            CMP #FFh
+            JPZ _failRTS
             JMP _RTS
         
 ;Function '03h' = Get hours (OUTPUT = Accu), Carry = 0 if successfull 
@@ -170,6 +168,8 @@ func_getHours
             AND #02h
             JPZ _failRTS
             LDAA VAR_hours
+            CMP #FFh
+            JPZ _failRTS
             JMP _RTS        
        
 ;Function '04h' = Get day (OUTPUT = Accu), Carry = 0 if successfull 
@@ -180,6 +180,8 @@ func_getDay
             AND #04h
             JPZ _failRTS
             LDAA VAR_day
+            CMP #FFh
+            JPZ _failRTS
             JMP _RTS    
         
 ;Function '05h' = Get weekday (OUTPUT = Accu), Carry = 0 if successfull 
@@ -191,6 +193,8 @@ func_getWeekday
             AND #04h
             JPZ _failRTS
             LDAA VAR_weekday
+            CMP #FFh
+            JPZ _failRTS
             JMP _RTS   
 
 ;Function '06h' = Get month (OUTPUT = Accu), Carry = 0 if successfull 
@@ -201,6 +205,8 @@ func_getMonth
             AND #04h
             JPZ _failRTS
             LDAA VAR_month
+            CMP #FFh
+            JPZ _failRTS
             JMP _RTS     
         
 ;Function '07h' = Get year (OUTPUT = Accu), Carry = 0 if successfull 
@@ -211,6 +217,8 @@ func_getYear
             AND #04h
             JPZ _failRTS
             LDAA VAR_year
+            CMP #FFh
+            JPZ _failRTS
             JMP _RTS
 
 ;Function '08h' = Get entrypoint of library         
@@ -241,57 +249,71 @@ int_timer
 ;DCF77 decoding   
 ;---------------------------------------------------------
 decode 
-            ;From this point no interrupt should break the programm
+;From this point no interrupt should break the programm
             SEC
             JSR (KERN_SPINLOCK) ;"You shall not pass"           
             
-            ;TODO: Schaltsekunde erkennen (Wenn VAR_second = 59 UND DANN die Lücke)
-            ;Synchronize with signal -> Detect syncpoint/-gap (59th or 60th second)
+;Synchronize with signal -> Detect syncpoint/-gap
             LDA ZP_temp1
-            CMP #CONST_SYNCPAUSE  
+            CMP #PARAM_SYNCPAUSE  
             JNC _dec0
-;Time >= 50 -> Time longer than 1 second
+;Time >= PARAM_SYNCPAUSE -> Time longer than 1 second
 ;Syncpoint reached
             STZ VAR_synced
             STZ VAR_second
             STZ VAR_edgeCnt
             JMP _decEnd
      
-;Time < 50 -> New second or bit information     
+;Time < PARAM_SYNCPAUSE -> New second or bit information     
 ;Count seconds, Check signal for errors   
-_dec0       CMP #CONST_SECOND 
+_dec0       CMP #PARAM_SECOND 
             JNC newBit
-            ;Time >= 20 -> Next second
-            INCA VAR_second
-;Display synced status on I/O-Module LEDS
+            ;Time >= PARAM_SECOND -> Next second
+            INCA VAR_second  
+            JMP _decEnd
+
+;Time < PARAM_SECOND -> New bit 
+newBit 
+;Display synced status on I/O-Module LEDs
 #IFDEF SYNC_DISP
             JSR syncDisp
-#ENDIF    
-            ;Signal checking -> Twice as many edges as seconds?
+#ENDIF  
+;First do signal checking -> Twice as many edges+1 as seconds?
             LDAA VAR_edgeCnt
+            SEC
+            SBC #1
             DIV #2
             CMPA VAR_second
-            JPZ _decEnd
-        
+            JPZ _nBit0 ;Check successfull -> Go forward to bit checking
+            
 ;No longer synchronized        
 deSync  
             LDA #1 
             STAA VAR_synced
-            STAA VAR_ledsSync
             STZ VAR_dataOK
             JMP _decEnd
   
-;Time < 20 -> New bit      
-newBit  
+;Decode bit     
+_nBit0  
             LDAA VAR_second
-            JNZ _nBit0
+            JNZ _nBit3
             JSR getBit
             JNZ deSync ;If Bit 0 != 0 -> Not synchronized or incorrect signal
-            ;TODO: Only take over if dataok is set
+            
+;Second/bit = 0 -> Take over data from last minute            
+            LDAA VAR_dataOK
+            AND #01h
+            JPZ _nBit1
             LDAA VAR_tmpMinutes ;Take over 'minutes'
             STAA VAR_minutes
+_nBit1      LDAA VAR_dataOK
+            AND #02h
+            JPZ _nBit2
             LDAA VAR_tmpHours ;Take over 'hours'
             STAA VAR_hours
+_nBit2      LDAA VAR_dataOK
+            AND #04h
+            JPZ _decEnd
             LDAA VAR_tmpWeekday ;Take over 'weekday'
             STAA VAR_weekday
             LDAA VAR_tmpDay ;Take over 'day'
@@ -302,15 +324,15 @@ newBit
             STAA VAR_year
             JMP _decEnd
         
-_nBit0      CMP #20 ;Begin of time information = 1
-            JNC _decEnd
-            JNZ _nBit1
+_nBit3      CMP #20 ;If Second/bit = 20 -> Begin of time information always '1'
+            JNC _decEnd ;Below bit 20 is nothing important
+            JNZ _nBit4
             JSR getBit
             JPZ deSync ;If Bit 20 != 1 -> Not synchronized or incorrect signal
             JMP _decEnd
  
 ;Bit >20 - Get/decode data
-_nBit1      LDAA VAR_synced
+_nBit4      LDAA VAR_synced
             JNZ _decEnd
             ;Only continue if synchronized
             LDAA VAR_second
@@ -331,9 +353,10 @@ _nBit1      LDAA VAR_synced
             ;Second >= 50
             CMP #59
             JNC getYear ;Go to year decoding
-            ;Second >= 59
-            JMP _decEnd
-
+            ;Second >= 59 -> Leap second!
+            JSR getBit
+            JPZ _decEnd ;Always '0'
+            JMP deSync
 
 ;Get/decode minutes
 ;---------------------------------------------------------
@@ -562,8 +585,7 @@ parityDate
             LDYA VAR_dateParity
             JSR bitCnt
             JPC _pDat0
-            ;Bit count = "odd"   
-            PLA
+            PLA ;Bit count = "odd" 
             JNZ _pDateOK
             
 _pDateBAD   LDA #03h ;Partity n.OK
@@ -582,12 +604,11 @@ _pDateOK    LDA ZP_temp1+1  ;Parity OK
             STAA VAR_dataOK
             JMP _decEnd
             
-    
   
 ;Ready for next bit
 _decEnd
             STZ FLG_dcfReceiver ;Reset dcf77 interrupt flag 
-            MOV ZP_temp1, #0 ;Reset Time
+            MOV ZP_temp1, #0 ;Reset Edge time
             CLC
             JSR (KERN_SPINLOCK) ;Enable the interrupts again
             RTS
@@ -597,29 +618,70 @@ _decEnd
 ;---------------------------------------------------------
 #IFDEF SYNC_DISP
 syncDisp
+;Synced status           
             LDAA VAR_synced
             JPZ _syncD0
-            CLA
-            JSR (KERN_IOCHANGELED) 
-            RTS
-_syncD0     LDAA VAR_dataOK
-            CMP #07h
-            JPZ _syncD2
-            LDAA VAR_ledsSync       
-            CMP #10h
-            JNC _syncD1
-            LDA #01h
-            STAA VAR_ledsSync
-_syncD1     JSR (KERN_IOCHANGELED) 
-            SHLA VAR_ledsSync
-            RTS
+            LDA #08h 
+            EORA VAR_ledsDataOK
+            STAA VAR_ledsDataOK
+            JMP _syncD7
+_syncD0     LDA #08h 
+            ORAA VAR_ledsDataOK
+            STAA VAR_ledsDataOK
+            
+            LDAA VAR_second
+            CMP #21
+            JNC _syncD7 ;Second <21 -> No time information fetching
+            CMP #29
+            JNC _syncD1 ;Second >= 21 & <29 -> Minutes
+            JPZ _syncD1 ;Second = 29 -> Minutes
+            CMP #36
+            JNC _syncD3 ;Second >= 29 & < 36 -> Hours
+            JPZ _syncD3 ;Second = 36 -> Hours
+            CMP #59
+            JNC _syncD5 ;Second >= 36 & < 59 -> Date
+            JPZ _syncD5 ;Second = 59 -> Date
+            JMP _syncD7
+            
+;Minutes Status
+_syncD1     LDAA VAR_dataOK
+            AND #01h
+            JNZ _sDisp2
+            LDA #01h 
+            EORA VAR_ledsDataOK
+            STAA VAR_ledsDataOK
+            JMP _syncD7
+_sDisp2     LDA #01h
+            ORAA VAR_ledsDataOK
+            STAA VAR_ledsDataOK
+            JMP _syncD7
+            
+;Hours Status
+_syncD3     LDAA VAR_dataOK
+            AND #02h
+            JNZ _syncD4
+            LDA #02h 
+            EORA VAR_ledsDataOK
+            STAA VAR_ledsDataOK
+            JMP _syncD7
+_syncD4     LDA #02h
+            ORAA VAR_ledsDataOK
+            STAA VAR_ledsDataOK
+            JMP _syncD7
+            
+;Date Status
+_syncD5     LDAA VAR_dataOK
+            AND #04h
+            JNZ _syncD6
+            LDA #04h 
+            EORA VAR_ledsDataOK
+            STAA VAR_ledsDataOK
+            JMP _syncD7
+_syncD6     LDA #04h
+            ORAA VAR_ledsDataOK
+            STAA VAR_ledsDataOK
 
-_syncD2     LDAA VAR_ledsDataOK
-            SBC #03h
-            CMP #03h
-            JNZ _syncD3
-            LDA #09h
-_syncD3     STAA VAR_ledsDataOK
+_syncD7     LDAA VAR_ledsDataOK
             JSR (KERN_IOCHANGELED)
             RTS
         
@@ -631,12 +693,12 @@ _syncD3     STAA VAR_ledsDataOK
 ;Get bit information from Time (Output: A = High(80h), Low(00h))        
 getBit      
             LDA ZP_temp1
-            CMP #CONST_LOWHIGH
+            CMP #PARAM_LOWHIGH
             JNC _gBit0
-            ;Time >= CONST_LOWHIGH -> Bit = 1
+            ;Time >= PARAM_LOWHIGH -> Bit = 1
             LDA #80h
             SKA
-_gBit0      CLA ;Time < CONST_LOWHIGH -> Bit = 0
+_gBit0      CLA ;Time < PARAM_LOWHIGH -> Bit = 0
             RTS
         
         
