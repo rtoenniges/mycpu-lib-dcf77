@@ -99,14 +99,14 @@
                 
                 ;Variables
     8008 01     FLG_dcfReceiver     DB  1   ;This flag is set to 1 if input comes from the DCF77-Receiver
-    8009 00     VAR_edgeCnt         DB  0   ;Edge counter
-    800A 01     VAR_synced          DB  1   ;Sync flag -> 0 if synchron with dcf77
+    8009 01     FLG_synced          DB  1   ;Sync flag -> 0 if synchron with dcf77
+    800A 00     VAR_edgeCnt         DB  0   ;Edge counter
     800B 00     VAR_dataOK          DB  0   ;Parity check -> Bit 1 = Minutes OK, Bit 2 = Hours OK, Bit 3 = Date OK
                 
     800C 00     VAR_pSecond         DB  0   ;Pseudo second to bridge desynchronization
     800D 00     VAR_second          DB  0   ;DCF77-Second/Bit counter
                 
-                ;Time variables initialized with FFh to "lock" the first minute after starting the library
+                ;Time variables initialized with FFh to "lock" Get-functions until 2nd synchronization point reached
     800E FF     VAR_minutes         DB  FFh
     800F FF     VAR_hours           DB  FFh
                 
@@ -217,92 +217,92 @@
     8084 191781             JPZ func_getYear        ;Function 07h 
     8087 9B                 DEC 
     8088 193081             JPZ func_getEntryPoint  ;Function 08h
-    808B 106C84             JMP _failRTS
+    808B 105084             JMP _failRTS
                 
                 ;Function '01h' = Get seconds (OUTPUT = Accu), Carry = 0 if successfull
                 func_getSeconds
-    808E 320A80             LDAA VAR_synced
-    8091 186C84             JNZ _failRTS
+    808E 320980             LDAA FLG_synced
+    8091 185084             JNZ _failRTS
     8094 320D80             LDAA VAR_second
-    8097 106A84             JMP _RTS
+    8097 104E84             JMP _RTS
                 
                 ;Function '02h' = Get minutes (OUTPUT = Accu), Carry = 0 if successfull         
                 func_getMinutes  
-    809A 320A80             LDAA VAR_synced
-    809D 186C84             JNZ _failRTS
+    809A 320980             LDAA FLG_synced
+    809D 185084             JNZ _failRTS
     80A0 320B80             LDAA VAR_dataOK
     80A3 D001               AND #01h
-    80A5 196C84             JPZ _failRTS
+    80A5 195084             JPZ _failRTS
     80A8 320E80             LDAA VAR_minutes
     80AB 70FF               CMP #FFh
-    80AD 196C84             JPZ _failRTS
-    80B0 106A84             JMP _RTS
+    80AD 195084             JPZ _failRTS
+    80B0 104E84             JMP _RTS
                 
                 ;Function '03h' = Get hours (OUTPUT = Accu), Carry = 0 if successfull 
                 func_getHours
-    80B3 320A80             LDAA VAR_synced
-    80B6 186C84             JNZ _failRTS
+    80B3 320980             LDAA FLG_synced
+    80B6 185084             JNZ _failRTS
     80B9 320B80             LDAA VAR_dataOK
     80BC D002               AND #02h
-    80BE 196C84             JPZ _failRTS
+    80BE 195084             JPZ _failRTS
     80C1 320F80             LDAA VAR_hours
     80C4 70FF               CMP #FFh
-    80C6 196C84             JPZ _failRTS
-    80C9 106A84             JMP _RTS        
+    80C6 195084             JPZ _failRTS
+    80C9 104E84             JMP _RTS        
                 
                 ;Function '04h' = Get day (OUTPUT = Accu), Carry = 0 if successfull 
                 func_getDay
-    80CC 320A80             LDAA VAR_synced
-    80CF 186C84             JNZ _failRTS
+    80CC 320980             LDAA FLG_synced
+    80CF 185084             JNZ _failRTS
     80D2 320B80             LDAA VAR_dataOK
     80D5 D004               AND #04h
-    80D7 196C84             JPZ _failRTS
+    80D7 195084             JPZ _failRTS
     80DA 321080             LDAA VAR_day
     80DD 70FF               CMP #FFh
-    80DF 196C84             JPZ _failRTS
-    80E2 106A84             JMP _RTS    
+    80DF 195084             JPZ _failRTS
+    80E2 104E84             JMP _RTS    
                 
                 ;Function '05h' = Get weekday (OUTPUT = Accu), Carry = 0 if successfull 
                 ;1 = monday, 2 = tuesday, 3 = wednesday, 4 = thursday, 5 = friday, 6 = saturday, 7 = sunday
                 func_getWeekday
-    80E5 320A80             LDAA VAR_synced
-    80E8 186C84             JNZ _failRTS
+    80E5 320980             LDAA FLG_synced
+    80E8 185084             JNZ _failRTS
     80EB 320B80             LDAA VAR_dataOK
     80EE D004               AND #04h
-    80F0 196C84             JPZ _failRTS
+    80F0 195084             JPZ _failRTS
     80F3 321180             LDAA VAR_weekday
     80F6 70FF               CMP #FFh
-    80F8 196C84             JPZ _failRTS
-    80FB 106A84             JMP _RTS   
+    80F8 195084             JPZ _failRTS
+    80FB 104E84             JMP _RTS   
                 
                 ;Function '06h' = Get month (OUTPUT = Accu), Carry = 0 if successfull 
                 func_getMonth
-    80FE 320A80             LDAA VAR_synced
-    8101 186C84             JNZ _failRTS
+    80FE 320980             LDAA FLG_synced
+    8101 185084             JNZ _failRTS
     8104 320B80             LDAA VAR_dataOK
     8107 D004               AND #04h
-    8109 196C84             JPZ _failRTS
+    8109 195084             JPZ _failRTS
     810C 321280             LDAA VAR_month
     810F 70FF               CMP #FFh
-    8111 196C84             JPZ _failRTS
-    8114 106A84             JMP _RTS     
+    8111 195084             JPZ _failRTS
+    8114 104E84             JMP _RTS     
                 
                 ;Function '07h' = Get year (OUTPUT = Accu), Carry = 0 if successfull 
                 func_getYear
-    8117 320A80             LDAA VAR_synced
-    811A 186C84             JNZ _failRTS
+    8117 320980             LDAA FLG_synced
+    811A 185084             JNZ _failRTS
     811D 320B80             LDAA VAR_dataOK
     8120 D004               AND #04h
-    8122 196C84             JPZ _failRTS
+    8122 195084             JPZ _failRTS
     8125 321380             LDAA VAR_year
     8128 70FF               CMP #FFh
-    812A 196C84             JPZ _failRTS
-    812D 106A84             JMP _RTS
+    812A 195084             JPZ _failRTS
+    812D 104E84             JMP _RTS
                 
                 ;Function '08h' = Get entrypoint of library         
                 func_getEntryPoint
     8130 6C6B80             LPT #funcdispatch
-    8133 106A84             JMP _RTS
+    8133 104E84             JMP _RTS
                 
                 ;--------------------------------------------------------- 
                 ;Interrupt routines   
@@ -312,7 +312,7 @@
                 int_dcf77
     8136 3001               LDA #1 
     8138 420880             STAA FLG_dcfReceiver ;Flank detected -> Set flag
-    813B 7D0980             INCA VAR_edgeCnt ;Count edges (For signal error detection)
+    813B 7D0A80             INCA VAR_edgeCnt ;Count edges (For signal error detection)
     813E 1F                 RTS       
                 
                 ;Timer interrupt
@@ -337,10 +337,10 @@
     8150 165F81             JNC _dec0
                 ;Time >= PARAM_SYNCPAUSE -> Time longer than 1 second
                 ;Syncpoint reached
-    8153 2F0A80             STZ VAR_synced
+    8153 2F0980             STZ FLG_synced
     8156 2F0D80             STZ VAR_second
-    8159 2F0980             STZ VAR_edgeCnt
-    815C 109683             JMP _decEnd
+    8159 2F0A80             STZ VAR_edgeCnt
+    815C 10A183             JMP _decEnd
                 
                 ;Time < PARAM_SYNCPAUSE -> New second or bit information     
                 ;Count seconds, Check signal for errors   
@@ -348,411 +348,401 @@
     8161 166A81             JNC newBit
                             ;Time >= PARAM_SECOND -> Next second
     8164 7D0D80             INCA VAR_second  
-    8167 109683             JMP _decEnd
+    8167 10A183             JMP _decEnd
                 
                 ;Time < PARAM_SECOND -> New bit 
                 newBit 
                 ;Display synced status on I/O-Module LEDs
-    816A 1AA183             JSR syncDisp
+    816A 1AAC83             JSR syncDisp
                 ;First do signal checking -> Twice as many edges+1 as seconds?
-    816D 320980             LDAA VAR_edgeCnt
+    816D 320A80             LDAA VAR_edgeCnt
     8170 05                 SEC
     8171 9001               SBC #1
     8173 B002               DIV #2
     8175 720D80             CMPA VAR_second
-    8178 198681             JPZ _nBit0 ;Check successfull -> Go forward to bit checking
+    8178 198E81             JPZ _nBit0 ;Check successfull -> Go forward to bit checking
                 
                 ;No longer synchronized        
                 deSync  
     817B 3001               LDA #1 
-    817D 420A80             STAA VAR_synced
+    817D 420980             STAA FLG_synced
     8180 2F0B80             STZ VAR_dataOK
-    8183 109683             JMP _decEnd
+    8183 3008               LDA #08h
+    8185 D21C80             ANDA VAR_ledsDataOK
+    8188 421C80             STAA VAR_ledsDataOK
+    818B 10A183             JMP _decEnd
                 
                 ;Decode bit     
                 _nBit0  
-    8186 320D80             LDAA VAR_second
-    8189 18D181             JNZ _nBit3
-    818C 1A3B84             JSR getBit
-    818F 187B81             JNZ deSync ;If Bit 0 != 0 -> Not synchronized or incorrect signal
+    818E 320D80             LDAA VAR_second
+    8191 18D981             JNZ _nBit3
+    8194 1A1F84             JSR getBit
+    8197 187B81             JNZ deSync ;If Bit 0 != 0 -> Not synchronized or incorrect signal
                 
                 ;Second/bit = 0 -> Take over data from last minute            
-    8192 320B80             LDAA VAR_dataOK
-    8195 D001               AND #01h
-    8197 19A081             JPZ _nBit1
-    819A 321580             LDAA VAR_tmpMinutes ;Take over 'minutes'
-    819D 420E80             STAA VAR_minutes
-    81A0 320B80 _nBit1      LDAA VAR_dataOK
-    81A3 D002               AND #02h
-    81A5 19AE81             JPZ _nBit2
-    81A8 321680             LDAA VAR_tmpHours ;Take over 'hours'
-    81AB 420F80             STAA VAR_hours
-    81AE 320B80 _nBit2      LDAA VAR_dataOK
-    81B1 D004               AND #04h
-    81B3 199683             JPZ _decEnd
-    81B6 321880             LDAA VAR_tmpWeekday ;Take over 'weekday'
-    81B9 421180             STAA VAR_weekday
-    81BC 321780             LDAA VAR_tmpDay ;Take over 'day'
-    81BF 421080             STAA VAR_day
-    81C2 321980             LDAA VAR_tmpMonth ;Take over 'month'
-    81C5 421280             STAA VAR_month
-    81C8 321A80             LDAA VAR_tmpYear ;Take over 'year'
-    81CB 421380             STAA VAR_year
-    81CE 109683             JMP _decEnd
+    819A 320B80             LDAA VAR_dataOK
+    819D D001               AND #01h
+    819F 19A881             JPZ _nBit1
+    81A2 321580             LDAA VAR_tmpMinutes ;Take over 'minutes'
+    81A5 420E80             STAA VAR_minutes
+    81A8 320B80 _nBit1      LDAA VAR_dataOK
+    81AB D002               AND #02h
+    81AD 19B681             JPZ _nBit2
+    81B0 321680             LDAA VAR_tmpHours ;Take over 'hours'
+    81B3 420F80             STAA VAR_hours
+    81B6 320B80 _nBit2      LDAA VAR_dataOK
+    81B9 D004               AND #04h
+    81BB 19A183             JPZ _decEnd
+    81BE 321880             LDAA VAR_tmpWeekday ;Take over 'weekday'
+    81C1 421180             STAA VAR_weekday
+    81C4 321780             LDAA VAR_tmpDay ;Take over 'day'
+    81C7 421080             STAA VAR_day
+    81CA 321980             LDAA VAR_tmpMonth ;Take over 'month'
+    81CD 421280             STAA VAR_month
+    81D0 321A80             LDAA VAR_tmpYear ;Take over 'year'
+    81D3 421380             STAA VAR_year
+    81D6 10A183             JMP _decEnd
                 
-    81D1 7014   _nBit3      CMP #20 ;If Second/bit = 20 -> Begin of time information always '1'
-    81D3 169683             JNC _decEnd ;Below bit 20 is nothing important
-    81D6 18E281             JNZ _nBit4
-    81D9 1A3B84             JSR getBit
-    81DC 197B81             JPZ deSync ;If Bit 20 != 1 -> Not synchronized or incorrect signal
-    81DF 109683             JMP _decEnd
+    81D9 7014   _nBit3      CMP #20
+    81DB 16A183             JNC _decEnd ;Below bit 20 is nothing important
+    81DE 18EA81             JNZ _nBit4
+    81E1 1A1F84             JSR getBit; Second/bit = 20 -> Begin of time information always '1'
+    81E4 197B81             JPZ deSync ;If Bit 20 != 1 -> Not synchronized or incorrect signal
+    81E7 10A183             JMP _decEnd
                 
                 ;Bit >20 - Get/decode data
-    81E2 320A80 _nBit4      LDAA VAR_synced
-    81E5 189683             JNZ _decEnd
+    81EA 320980 _nBit4      LDAA FLG_synced
+    81ED 18A183             JNZ _decEnd
                             ;Only continue if synchronized
-    81E8 320D80             LDAA VAR_second
-    81EB 701D               CMP #29
-    81ED 161282             JNC getMinutes ;Go to minute decoding
+    81F0 320D80             LDAA VAR_second
+    81F3 701D               CMP #29
+    81F5 161D82             JNC getMinutes ;Go to minute decoding
                             ;Second >= 29
-    81F0 7024               CMP #36
-    81F2 165F82             JNC getHours ;Go to hour decoding
+    81F8 7024               CMP #36
+    81FA 166A82             JNC getHours ;Go to hour decoding
                             ;Second >= 36
-    81F5 702A               CMP #42
-    81F7 16AE82             JNC getDay ;Go to day decoding
+    81FD 702A               CMP #42
+    81FF 16B982             JNC getDay ;Go to day decoding
                             ;Second >= 42
-    81FA 702D               CMP #45
-    81FC 16DE82             JNC getWDay ;Go to weekday decoding
+    8202 702D               CMP #45
+    8204 16E982             JNC getWDay ;Go to weekday decoding
                             ;Second >= 45
-    81FF 7032               CMP #50
-    8201 161283             JNC getMonth ;Go to month decoding
+    8207 7032               CMP #50
+    8209 161D83             JNC getMonth ;Go to month decoding
                             ;Second >= 50
-    8204 703B               CMP #59
-    8206 164683             JNC getYear ;Go to year decoding
-                            ;Second >= 59 -> Leap second!
-    8209 1A3B84             JSR getBit
-    820C 199683             JPZ _decEnd ;Always '0'
-    820F 107B81             JMP deSync
+    820C 703B               CMP #59
+    820E 165183             JNC getYear ;Go to year decoding
+    8211 18A183             JNZ _decEnd
+                            ;Second = 59 -> Leap second!
+    8214 1A1F84             JSR getBit ;Always '0'
+    8217 187B81             JNZ deSync 
+    821A 10A183             JMP _decEnd
                 
                 ;Get/decode minutes
                 ;---------------------------------------------------------
                 getMinutes   
-    8212 701C               CMP #28
-    8214 192A82             JPZ parityMinutes ;Last bit -> Check parity
-    8217 7015               CMP #21
-    8219 181F82             JNZ _gMin0
-    821C 481100             MOV ZP_temp1+1,#0 ;First bit -> Clear data
+    821D 701C               CMP #28
+    821F 193582             JPZ parityMinutes ;Last bit -> Check parity
+    8222 7015               CMP #21
+    8224 182A82             JNZ _gMin0
+    8227 481100             MOV ZP_temp1+1,#0 ;First bit -> Clear data
                 
                 ;Get bit (minutes)
-    821F 1A3B84 _gMin0      JSR getBit
-    8222 E111               ORA ZP_temp1+1
-    8224 DB                 SHR
-    8225 4111               STA ZP_temp1+1
-    8227 109683             JMP _decEnd
+    822A 1A1F84 _gMin0      JSR getBit
+    822D E111               ORA ZP_temp1+1
+    822F DB                 SHR
+    8230 4111               STA ZP_temp1+1
+    8232 10A183             JMP _decEnd
                 
                 ;Last bit
                 ;Check parity (minutes)        
                 parityMinutes  
-    822A 1A3B84             JSR getBit ;Get "Carry-Bit" and save it to stack for later use
-    822D 08                 PHA
+    8235 1A1F84             JSR getBit ;Get "Carry-Bit" and save it to stack for later use
+    8238 08                 PHA
                             ;Determine if bitcount of data is even or odd
-    822E 3111               LDA ZP_temp1+1
-    8230 5007               LDX #7
-    8232 2E                 CLY
-    8233 1A4784             JSR bitCnt
-    8236 174882             JPC _pMin0   
-    8239 0C                 PLA ;Bit count = "odd"
-    823A 184C82             JNZ _pMinOK
+    8239 3111               LDA ZP_temp1+1
+    823B 5007               LDX #7
+    823D 2E                 CLY
+    823E 1A2B84             JSR bitCnt
+    8241 175382             JPC _pMin0   
+    8244 0C                 PLA ;Bit count = "odd"
+    8245 185782             JNZ _pMinOK
                 
-    823D 3006   _pMinBAD    LDA #06h ;Parity n.OK
-    823F D20B80             ANDA VAR_dataOK
-    8242 420B80             STAA VAR_dataOK
-    8245 109683             JMP _decEnd
+    8248 3006   _pMinBAD    LDA #06h ;Parity n.OK
+    824A D20B80             ANDA VAR_dataOK
+    824D 420B80             STAA VAR_dataOK
+    8250 10A183             JMP _decEnd
                 
-    8248 0C     _pMin0      PLA ;Bit count = "even"
-    8249 183D82             JNZ _pMinBAD
+    8253 0C     _pMin0      PLA ;Bit count = "even"
+    8254 184882             JNZ _pMinBAD
                 
-    824C 3111   _pMinOK     LDA ZP_temp1+1 ;Parity OK
-    824E 1A5C84             JSR bcdToDec
-    8251 421580             STAA VAR_tmpMinutes
-    8254 3001               LDA #01h
-    8256 E20B80             ORAA VAR_dataOK
-    8259 420B80             STAA VAR_dataOK
-    825C 109683             JMP _decEnd
+    8257 3111   _pMinOK     LDA ZP_temp1+1 ;Parity OK
+    8259 1A4084             JSR bcdToDec
+    825C 421580             STAA VAR_tmpMinutes
+    825F 3001               LDA #01h
+    8261 E20B80             ORAA VAR_dataOK
+    8264 420B80             STAA VAR_dataOK
+    8267 10A183             JMP _decEnd
                 
                 ;Get/decode hours
                 ;---------------------------------------------------------
                 getHours
-    825F 7023               CMP #35
-    8261 197782             JPZ parityHours ;Last bit -> Check parity
-    8264 701D               CMP #29
-    8266 186C82             JNZ _gHrs0
-    8269 481100             MOV ZP_temp1+1,#0 ;First Bit -> Clear data
+    826A 7023               CMP #35
+    826C 198282             JPZ parityHours ;Last bit -> Check parity
+    826F 701D               CMP #29
+    8271 187782             JNZ _gHrs0
+    8274 481100             MOV ZP_temp1+1,#0 ;First Bit -> Clear data
                 
                 ;Get bit (hours)
-    826C 1A3B84 _gHrs0      JSR getBit
-    826F E111               ORA ZP_temp1+1
-    8271 DB                 SHR
-    8272 4111               STA ZP_temp1+1 
-    8274 109683             JMP _decEnd
+    8277 1A1F84 _gHrs0      JSR getBit
+    827A E111               ORA ZP_temp1+1
+    827C DB                 SHR
+    827D 4111               STA ZP_temp1+1 
+    827F 10A183             JMP _decEnd
                 
                 ;Last bit
                 ;Check parity (hours)         
                 parityHours       
-    8277 BC11               SHR ZP_temp1+1 ;Shift data right by 1
+    8282 BC11               SHR ZP_temp1+1 ;Shift data right by 1
                 
-    8279 1A3B84             JSR getBit ;Get "Carry-Bit" and save it to stack for later use
-    827C 08                 PHA
+    8284 1A1F84             JSR getBit ;Get "Carry-Bit" and save it to stack for later use
+    8287 08                 PHA
                             ;Determine if bitcount of data is even or odd
-    827D 3111               LDA ZP_temp1+1  
-    827F 5006               LDX #6
-    8281 2E                 CLY
-    8282 1A4784             JSR bitCnt
-    8285 179782             JPC _pHrs0   
-    8288 0C                 PLA ;Bit count = "odd"
-    8289 189B82             JNZ _pHrsOK
+    8288 3111               LDA ZP_temp1+1  
+    828A 5006               LDX #6
+    828C 2E                 CLY
+    828D 1A2B84             JSR bitCnt
+    8290 17A282             JPC _pHrs0   
+    8293 0C                 PLA ;Bit count = "odd"
+    8294 18A682             JNZ _pHrsOK
                 
-    828C 3005   _pHrsBAD    LDA #05h ;Parity n.OK
-    828E D20B80             ANDA VAR_dataOK
-    8291 420B80             STAA VAR_dataOK
-    8294 109683             JMP _decEnd
+    8297 3005   _pHrsBAD    LDA #05h ;Parity n.OK
+    8299 D20B80             ANDA VAR_dataOK
+    829C 420B80             STAA VAR_dataOK
+    829F 10A183             JMP _decEnd
                 
-    8297 0C     _pHrs0      PLA ;Bit count = "even"
-    8298 188C82             JNZ _pHrsBAD
+    82A2 0C     _pHrs0      PLA ;Bit count = "even"
+    82A3 189782             JNZ _pHrsBAD
                 
-    829B 3111   _pHrsOK     LDA ZP_temp1+1 ;Parity OK
-    829D 1A5C84             JSR bcdToDec
-    82A0 421680             STAA VAR_tmpHours
-    82A3 3002               LDA #02h
-    82A5 E20B80             ORAA VAR_dataOK
-    82A8 420B80             STAA VAR_dataOK
-    82AB 109683             JMP _decEnd
+    82A6 3111   _pHrsOK     LDA ZP_temp1+1 ;Parity OK
+    82A8 1A4084             JSR bcdToDec
+    82AB 421680             STAA VAR_tmpHours
+    82AE 3002               LDA #02h
+    82B0 E20B80             ORAA VAR_dataOK
+    82B3 420B80             STAA VAR_dataOK
+    82B6 10A183             JMP _decEnd
                 
                 ;Get/decode day
                 ;---------------------------------------------------------
                 getDay  
-    82AE 7024               CMP #36 
-    82B0 18B682             JNZ _gDay0
-    82B3 481100             MOV ZP_temp1+1,#0 ;First Bit -> Clear data
+    82B9 7024               CMP #36 
+    82BB 18C182             JNZ _gDay0
+    82BE 481100             MOV ZP_temp1+1,#0 ;First Bit -> Clear data
                 
                 ;Get bit (day)      
-    82B6 1A3B84 _gDay0      JSR getBit
-    82B9 E111               ORA ZP_temp1+1
-    82BB DB                 SHR
-    82BC 4111               STA ZP_temp1+1  
+    82C1 1A1F84 _gDay0      JSR getBit
+    82C4 E111               ORA ZP_temp1+1
+    82C6 DB                 SHR
+    82C7 4111               STA ZP_temp1+1  
                             ;Check for last bit
-    82BE 320D80             LDAA VAR_second
-    82C1 7029               CMP #41       
-    82C3 189683             JNZ _decEnd 
+    82C9 320D80             LDAA VAR_second
+    82CC 7029               CMP #41       
+    82CE 18A183             JNZ _decEnd 
                 
                 ;Last bit
-    82C6 BC11               SHR ZP_temp1+1 ;Shift data right by 1 
+    82D1 BC11               SHR ZP_temp1+1 ;Shift data right by 1 
                 
                             ;Count high bits and add it to "VAR_dateParity"
-    82C8 3111               LDA ZP_temp1+1  
-    82CA 5006               LDX #6
-    82CC 2E                 CLY
-    82CD 1A4784             JSR bitCnt
-    82D0 421480             STAA VAR_dateParity
+    82D3 3111               LDA ZP_temp1+1  
+    82D5 5006               LDX #6
+    82D7 2E                 CLY
+    82D8 1A2B84             JSR bitCnt
+    82DB 421480             STAA VAR_dateParity
                             ;Save day value
-    82D3 3111               LDA ZP_temp1+1
-    82D5 1A5C84             JSR bcdToDec
-    82D8 421780             STAA VAR_tmpDay
-    82DB 109683             JMP _decEnd        
+    82DE 3111               LDA ZP_temp1+1
+    82E0 1A4084             JSR bcdToDec
+    82E3 421780             STAA VAR_tmpDay
+    82E6 10A183             JMP _decEnd        
                 
                 ;Get/decode weekday
                 ;---------------------------------------------------------
                 getWDay 
-    82DE 702A               CMP #42
-    82E0 18E682             JNZ _getWDay0
-    82E3 481100             MOV ZP_temp1+1,#0 ;First Bit -> Clear data
+    82E9 702A               CMP #42
+    82EB 18F182             JNZ _getWDay0
+    82EE 481100             MOV ZP_temp1+1,#0 ;First Bit -> Clear data
                 
                 ;Get bit (weekday)    
-    82E6 1A3B84 _getWDay0   JSR getBit
-    82E9 E111               ORA ZP_temp1+1
-    82EB DB                 SHR
-    82EC 4111               STA ZP_temp1+1 
+    82F1 1A1F84 _getWDay0   JSR getBit
+    82F4 E111               ORA ZP_temp1+1
+    82F6 DB                 SHR
+    82F7 4111               STA ZP_temp1+1 
                             ;Check for last bit
-    82EE 320D80             LDAA VAR_second
-    82F1 702C               CMP #44       
-    82F3 189683             JNZ _decEnd
+    82F9 320D80             LDAA VAR_second
+    82FC 702C               CMP #44       
+    82FE 18A183             JNZ _decEnd
                 
                 ;Last bit
                             ;Shift data right by 4
-    82F6 3111               LDA ZP_temp1+1 
-    82F8 B010               DIV #10h
-    82FA 4111               STA ZP_temp1+1 
+    8301 3111               LDA ZP_temp1+1 
+    8303 B010               DIV #10h
+    8305 4111               STA ZP_temp1+1 
                 
                             ;Count high bits and add it to "VAR_dateParity"
-    82FC 5003               LDX #3
-    82FE 591480             LDYA VAR_dateParity
-    8301 1A4784             JSR bitCnt
-    8304 421480             STAA VAR_dateParity
+    8307 5003               LDX #3
+    8309 591480             LDYA VAR_dateParity
+    830C 1A2B84             JSR bitCnt
+    830F 421480             STAA VAR_dateParity
                             ;Save weekday value
-    8307 3111               LDA ZP_temp1+1 
-    8309 1A5C84             JSR bcdToDec
-    830C 421880             STAA VAR_tmpWeekday
-    830F 109683             JMP _decEnd  
+    8312 3111               LDA ZP_temp1+1 
+    8314 1A4084             JSR bcdToDec
+    8317 421880             STAA VAR_tmpWeekday
+    831A 10A183             JMP _decEnd  
                 
                 ;Get/decode month
                 ;---------------------------------------------------------
                 getMonth    
-    8312 702D               CMP #45
-    8314 181A83             JNZ _gMon0
-    8317 481100             MOV ZP_temp1+1 ,#0 ;First Bit -> Clear data
+    831D 702D               CMP #45
+    831F 182583             JNZ _gMon0
+    8322 481100             MOV ZP_temp1+1 ,#0 ;First Bit -> Clear data
                 
                 ;Get bit (month)
-    831A 1A3B84 _gMon0      JSR getBit
-    831D E111               ORA ZP_temp1+1 
-    831F DB                 SHR
-    8320 4111               STA ZP_temp1+1  
+    8325 1A1F84 _gMon0      JSR getBit
+    8328 E111               ORA ZP_temp1+1 
+    832A DB                 SHR
+    832B 4111               STA ZP_temp1+1  
                             ;Check for last bit
-    8322 320D80             LDAA VAR_second
-    8325 7031               CMP #49       
-    8327 189683             JNZ _decEnd 
+    832D 320D80             LDAA VAR_second
+    8330 7031               CMP #49       
+    8332 18A183             JNZ _decEnd 
                 
                 ;Last bit
                             ;Shift data right by 2
-    832A BC11               SHR ZP_temp1+1   
-    832C BC11               SHR ZP_temp1+1  
+    8335 BC11               SHR ZP_temp1+1   
+    8337 BC11               SHR ZP_temp1+1  
                 
                             ;Count high bits and add it to "VAR_dateParity"
-    832E 3111               LDA ZP_temp1+1   
-    8330 5005               LDX #5
-    8332 591480             LDYA VAR_dateParity
-    8335 1A4784             JSR bitCnt
-    8338 421480             STAA VAR_dateParity
+    8339 3111               LDA ZP_temp1+1   
+    833B 5005               LDX #5
+    833D 591480             LDYA VAR_dateParity
+    8340 1A2B84             JSR bitCnt
+    8343 421480             STAA VAR_dateParity
                             ;Save month value
-    833B 3111               LDA ZP_temp1+1 
-    833D 1A5C84             JSR bcdToDec
-    8340 421980             STAA VAR_tmpMonth
-    8343 109683             JMP _decEnd 
+    8346 3111               LDA ZP_temp1+1 
+    8348 1A4084             JSR bcdToDec
+    834B 421980             STAA VAR_tmpMonth
+    834E 10A183             JMP _decEnd 
                 
                 ;Get/decode year
                 ;---------------------------------------------------------
                 getYear     
-    8346 703A               CMP #58
-    8348 195F83             JPZ parityDate ;Last bit -> Check parity
-    834B 7032               CMP #50
-    834D 185383             JNZ _gYear0
-    8350 481100             MOV ZP_temp1+1 ,#0 ;First Bit -> Clear data
+    8351 703A               CMP #58
+    8353 196A83             JPZ parityDate ;Last bit -> Check parity
+    8356 7032               CMP #50
+    8358 185E83             JNZ _gYear0
+    835B 481100             MOV ZP_temp1+1 ,#0 ;First Bit -> Clear data
                 
                 ;Get bit (year)
-    8353 BC11   _gYear0     SHR ZP_temp1+1 
-    8355 1A3B84             JSR getBit
-    8358 E111               ORA ZP_temp1+1 
-    835A 4111               STA ZP_temp1+1  
-    835C 109683             JMP _decEnd
+    835E BC11   _gYear0     SHR ZP_temp1+1 
+    8360 1A1F84             JSR getBit
+    8363 E111               ORA ZP_temp1+1 
+    8365 4111               STA ZP_temp1+1  
+    8367 10A183             JMP _decEnd
                 
                 ;Last bit
                 ;Check parity for whole date (Day, weekday, month, year)         
                 parityDate
-    835F 1A3B84             JSR getBit ;Get "Carry-Bit" and save it to stack for later use
-    8362 08                 PHA
+    836A 1A1F84             JSR getBit ;Get "Carry-Bit" and save it to stack for later use
+    836D 08                 PHA
                             ;Count high bits and add it to "VAR_dateParity"
                             ;Determine if bitcount of "VAR_dateParity" is even or odd
-    8363 3111               LDA ZP_temp1+1 
-    8365 5008               LDX #8
-    8367 591480             LDYA VAR_dateParity
-    836A 1A4784             JSR bitCnt
-    836D 177F83             JPC _pDat0
-    8370 0C                 PLA ;Bit count = "odd" 
-    8371 188383             JNZ _pDateOK
+    836E 3111               LDA ZP_temp1+1 
+    8370 5008               LDX #8
+    8372 591480             LDYA VAR_dateParity
+    8375 1A2B84             JSR bitCnt
+    8378 178A83             JPC _pDat0
+    837B 0C                 PLA ;Bit count = "odd" 
+    837C 188E83             JNZ _pDateOK
                 
-    8374 3003   _pDateBAD   LDA #03h ;Partity n.OK
-    8376 D20B80             ANDA VAR_dataOK
-    8379 420B80             STAA VAR_dataOK
-    837C 109683             JMP _decEnd
+    837F 3003   _pDateBAD   LDA #03h ;Partity n.OK
+    8381 D20B80             ANDA VAR_dataOK
+    8384 420B80             STAA VAR_dataOK
+    8387 10A183             JMP _decEnd
                 
-    837F 0C     _pDat0      PLA ;Bit count = "even"
-    8380 187483             JNZ _pDateBAD
+    838A 0C     _pDat0      PLA ;Bit count = "even"
+    838B 187F83             JNZ _pDateBAD
                 
-    8383 3111   _pDateOK    LDA ZP_temp1+1  ;Parity OK
-    8385 1A5C84             JSR bcdToDec
-    8388 421A80             STAA VAR_tmpYear ;Save year value
-    838B 3004               LDA #04h
-    838D E20B80             ORAA VAR_dataOK
-    8390 420B80             STAA VAR_dataOK
-    8393 109683             JMP _decEnd
+    838E 3111   _pDateOK    LDA ZP_temp1+1  ;Parity OK
+    8390 1A4084             JSR bcdToDec
+    8393 421A80             STAA VAR_tmpYear ;Save year value
+    8396 3004               LDA #04h
+    8398 E20B80             ORAA VAR_dataOK
+    839B 420B80             STAA VAR_dataOK
+    839E 10A183             JMP _decEnd
                 
                 ;Ready for next bit
                 _decEnd
-    8396 2F0880             STZ FLG_dcfReceiver ;Reset dcf77 interrupt flag 
-    8399 481000             MOV ZP_temp1, #0 ;Reset Edge time
-    839C 04                 CLC
-    839D 1BA802             JSR (KERN_SPINLOCK) ;Enable the interrupts again
-    83A0 1F                 RTS
+    83A1 2F0880             STZ FLG_dcfReceiver ;Reset dcf77 interrupt flag 
+    83A4 481000             MOV ZP_temp1, #0 ;Reset Edge time
+    83A7 04                 CLC
+    83A8 1BA802             JSR (KERN_SPINLOCK) ;Enable the interrupts again
+    83AB 1F                 RTS
                 
                 ;--------------------------------------------------------- 
-                ;Display moving light if synchronized on Multi-I/O LEDs   
+                ;Display snyc/data status on Multi-I/O LEDs   
                 ;---------------------------------------------------------
                 syncDisp
-                ;Synced status           
-    83A1 320A80             LDAA VAR_synced
-    83A4 19B283             JPZ _syncD0
-    83A7 3008               LDA #08h 
-    83A9 F21C80             EORA VAR_ledsDataOK
-    83AC 421C80             STAA VAR_ledsDataOK
-    83AF 103484             JMP _syncD7
-    83B2 3008   _syncD0     LDA #08h 
-    83B4 E21C80             ORAA VAR_ledsDataOK
+                ;Display synced status           
+    83AC 320980             LDAA FLG_synced
+    83AF 19BD83             JPZ _syncD0
+    83B2 3008               LDA #08h 
+    83B4 F21C80             EORA VAR_ledsDataOK
     83B7 421C80             STAA VAR_ledsDataOK
+    83BA 101584             JMP _syncD4
+    83BD 3008   _syncD0     LDA #08h 
+    83BF E21C80             ORAA VAR_ledsDataOK
+    83C2 421C80             STAA VAR_ledsDataOK
                 
-    83BA 320D80             LDAA VAR_second
-    83BD 7015               CMP #21
-    83BF 163484             JNC _syncD7 ;Second <21 -> No time information fetching
-    83C2 701D               CMP #29
-    83C4 16DD83             JNC _syncD1 ;Second >= 21 & <29 -> Minutes
-    83C7 19DD83             JPZ _syncD1 ;Second = 29 -> Minutes
-    83CA 7024               CMP #36
-    83CC 16FB83             JNC _syncD3 ;Second >= 29 & < 36 -> Hours
-    83CF 19FB83             JPZ _syncD3 ;Second = 36 -> Hours
-    83D2 703B               CMP #59
-    83D4 161984             JNC _syncD5 ;Second >= 36 & < 59 -> Date
-    83D7 191984             JPZ _syncD5 ;Second = 59 -> Date
-    83DA 103484             JMP _syncD7
+    83C5 320D80             LDAA VAR_second
+    83C8 7015               CMP #21
+    83CA 161584             JNC _syncD4 ;Second <21 -> No time information fetching
+    83CD 701D               CMP #29
+    83CF 16DF83             JNC _syncD1 ;Second >= 21 & <29 -> Fetching minutes
+    83D2 7024               CMP #36
+    83D4 16F283             JNC _syncD2 ;Second >= 29 & < 36 -> Fetching hours
+    83D7 703B               CMP #59
+    83D9 160584             JNC _syncD3 ;Second >= 36 & < 59 -> Fetching date
+    83DC 101584             JMP _syncD4
                 
-                ;Minutes Status
-    83DD 320B80 _syncD1     LDAA VAR_dataOK
-    83E0 D001               AND #01h
-    83E2 18F083             JNZ _sDisp2
-    83E5 3001               LDA #01h 
-    83E7 F21C80             EORA VAR_ledsDataOK
-    83EA 421C80             STAA VAR_ledsDataOK
-    83ED 103484             JMP _syncD7
-    83F0 3001   _sDisp2     LDA #01h
-    83F2 E21C80             ORAA VAR_ledsDataOK
-    83F5 421C80             STAA VAR_ledsDataOK
-    83F8 103484             JMP _syncD7
+                ;Fetching minutes
+    83DF 320B80 _syncD1     LDAA VAR_dataOK
+    83E2 D001               AND #01h
+    83E4 181584             JNZ _syncD4
+    83E7 3001               LDA #01h 
+    83E9 F21C80             EORA VAR_ledsDataOK
+    83EC 421C80             STAA VAR_ledsDataOK
+    83EF 101584             JMP _syncD4
                 
-                ;Hours Status
-    83FB 320B80 _syncD3     LDAA VAR_dataOK
-    83FE D002               AND #02h
-    8400 180E84             JNZ _syncD4
-    8403 3002               LDA #02h 
-    8405 F21C80             EORA VAR_ledsDataOK
-    8408 421C80             STAA VAR_ledsDataOK
-    840B 103484             JMP _syncD7
-    840E 3002   _syncD4     LDA #02h
-    8410 E21C80             ORAA VAR_ledsDataOK
-    8413 421C80             STAA VAR_ledsDataOK
-    8416 103484             JMP _syncD7
+                ;Fetching hours
+    83F2 320B80 _syncD2     LDAA VAR_dataOK
+    83F5 D002               AND #02h
+    83F7 181584             JNZ _syncD4
+    83FA 3002               LDA #02h 
+    83FC F21C80             EORA VAR_ledsDataOK
+    83FF 421C80             STAA VAR_ledsDataOK
+    8402 101584             JMP _syncD4
                 
-                ;Date Status
-    8419 320B80 _syncD5     LDAA VAR_dataOK
-    841C D004               AND #04h
-    841E 182C84             JNZ _syncD6
-    8421 3004               LDA #04h 
-    8423 F21C80             EORA VAR_ledsDataOK
-    8426 421C80             STAA VAR_ledsDataOK
-    8429 103484             JMP _syncD7
-    842C 3004   _syncD6     LDA #04h
-    842E E21C80             ORAA VAR_ledsDataOK
-    8431 421C80             STAA VAR_ledsDataOK
+                ;Fetching date 
+    8405 320B80 _syncD3     LDAA VAR_dataOK
+    8408 D004               AND #04h
+    840A 181584             JNZ _syncD4
+    840D 3004               LDA #04h 
+    840F F21C80             EORA VAR_ledsDataOK
+    8412 421C80             STAA VAR_ledsDataOK
                 
-    8434 321C80 _syncD7     LDAA VAR_ledsDataOK
-    8437 1B0603             JSR (KERN_IOCHANGELED)
-    843A 1F                 RTS
+    8415 320B80 _syncD4     LDAA VAR_dataOK
+    8418 E21C80             ORAA VAR_ledsDataOK
+    841B 1B0603             JSR (KERN_IOCHANGELED)
+    841E 1F                 RTS
                 
                 ;--------------------------------------------------------- 
                 ;Helper functions   
@@ -760,54 +750,54 @@
                 
                 ;Get bit information from Time (Output: A = High(80h), Low(00h))        
                 getBit      
-    843B 3110               LDA ZP_temp1
-    843D 7004               CMP #PARAM_LOWHIGH
-    843F 164584             JNC _gBit0
+    841F 3110               LDA ZP_temp1
+    8421 7004               CMP #PARAM_LOWHIGH
+    8423 162984             JNC _gBit0
                             ;Time >= PARAM_LOWHIGH -> Bit = 1
-    8442 3080               LDA #80h
-    8444 4D                 SKA
-    8445 2C     _gBit0      CLA ;Time < PARAM_LOWHIGH -> Bit = 0
-    8446 1F                 RTS
+    8426 3080               LDA #80h
+    8428 4D                 SKA
+    8429 2C     _gBit0      CLA ;Time < PARAM_LOWHIGH -> Bit = 0
+    842A 1F                 RTS
                 
                 ;Count high bits
                 ;Input: A = Byte, X = Number of bits, Y = Counter offset
                 ;Output: A = Counter value, Carry = 0 -> odd, Carry = 1 -> even
                 bitCnt
-    8447 DB     _bCnt0      SHR
-    8448 164C84             JNC _bCnt1
-    844B 8B                 INY
-    844C 494784 _bCnt1      DXJP _bCnt0
-    844F 29                 SAY
-    8450 08                 PHA
-    8451 C002               MOD #2
-    8453 195884             JPZ _bCnt2
-    8456 04                 CLC ;Counter value "odd"
-    8457 4D                 SKA
-    8458 05     _bCnt2      SEC ;Counter value "even"
-    8459 0C                 PLA
-    845A 1F                 RTS
+    842B DB     _bCnt0      SHR
+    842C 163084             JNC _bCnt1
+    842F 8B                 INY
+    8430 492B84 _bCnt1      DXJP _bCnt0
+    8433 29                 SAY
+    8434 08                 PHA
+    8435 C002               MOD #2
+    8437 193C84             JPZ _bCnt2
+    843A 04                 CLC ;Counter value "odd"
+    843B 4D                 SKA
+    843C 05     _bCnt2      SEC ;Counter value "even"
+    843D 0C                 PLA
+    843E 1F                 RTS
                 
                 ;Convert BCD to decimal (Input: A = BCD value) (Output: A = decimal vlaue) 
-    845B 00     VAR_tmpConvert  DB  0      
+    843F 00     VAR_tmpConvert  DB  0      
                 bcdToDec
-    845C 08                 PHA
-    845D B010               DIV #10h
-    845F A00A               MUL #0Ah
-    8461 4111               STA ZP_temp1+1
-    8463 0C                 PLA
-    8464 D00F               AND #0Fh
-    8466 04                 CLC
-    8467 8111               ADC ZP_temp1+1
-    8469 1F                 RTS
+    8440 08                 PHA
+    8441 B010               DIV #10h
+    8443 A00A               MUL #0Ah
+    8445 4111               STA ZP_temp1+1
+    8447 0C                 PLA
+    8448 D00F               AND #0Fh
+    844A 04                 CLC
+    844B 8111               ADC ZP_temp1+1
+    844D 1F                 RTS
                 
                 _RTS    
-    846A 04                 CLC
-    846B 1F                 RTS
+    844E 04                 CLC
+    844F 1F                 RTS
                 
                 _failRTS
-    846C 2C                 CLA
-    846D 05                 SEC
-    846E 1F                 RTS
+    8450 2C                 CLA
+    8451 05                 SEC
+    8452 1F                 RTS
                 
                 
 
@@ -816,7 +806,7 @@ Segment Table:
 **************
 Segment Name                 Startaddr  Endaddr     Size  Type
 =========================================================================
-default                           8000     846E      46F  CODE  fixed
+default                           8000     8452      453  CODE  fixed
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 No errors found.

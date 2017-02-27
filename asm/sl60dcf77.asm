@@ -31,14 +31,14 @@ PARAM_SECOND        EQU 10      ;Edge time < PARAM_SECOND = New bit, >= PARAM_SE
 
 ;Variables
 FLG_dcfReceiver     DB  1   ;This flag is set to 1 if input comes from the DCF77-Receiver
+FLG_synced          DB  1   ;Sync flag -> 0 if synchron with dcf77
 VAR_edgeCnt         DB  0   ;Edge counter
-VAR_synced          DB  1   ;Sync flag -> 0 if synchron with dcf77
 VAR_dataOK          DB  0   ;Parity check -> Bit 1 = Minutes OK, Bit 2 = Hours OK, Bit 3 = Date OK
 
 VAR_pSecond         DB  0   ;Pseudo second to bridge desynchronization
 VAR_second          DB  0   ;DCF77-Second/Bit counter
 
-;Time variables initialized with FFh to "lock" the first minute after starting the library
+;Time variables initialized with FFh to "lock" Get-functions until 2nd synchronization point reached
 VAR_minutes         DB  FFh
 VAR_hours           DB  FFh
 
@@ -143,14 +143,14 @@ funcdispatch
        
 ;Function '01h' = Get seconds (OUTPUT = Accu), Carry = 0 if successfull
 func_getSeconds
-            LDAA VAR_synced
+            LDAA FLG_synced
             JNZ _failRTS
             LDAA VAR_second
             JMP _RTS
 
 ;Function '02h' = Get minutes (OUTPUT = Accu), Carry = 0 if successfull         
 func_getMinutes  
-            LDAA VAR_synced
+            LDAA FLG_synced
             JNZ _failRTS
             LDAA VAR_dataOK
             AND #01h
@@ -162,7 +162,7 @@ func_getMinutes
         
 ;Function '03h' = Get hours (OUTPUT = Accu), Carry = 0 if successfull 
 func_getHours
-            LDAA VAR_synced
+            LDAA FLG_synced
             JNZ _failRTS
             LDAA VAR_dataOK
             AND #02h
@@ -174,7 +174,7 @@ func_getHours
        
 ;Function '04h' = Get day (OUTPUT = Accu), Carry = 0 if successfull 
 func_getDay
-            LDAA VAR_synced
+            LDAA FLG_synced
             JNZ _failRTS
             LDAA VAR_dataOK
             AND #04h
@@ -187,7 +187,7 @@ func_getDay
 ;Function '05h' = Get weekday (OUTPUT = Accu), Carry = 0 if successfull 
 ;1 = monday, 2 = tuesday, 3 = wednesday, 4 = thursday, 5 = friday, 6 = saturday, 7 = sunday
 func_getWeekday
-            LDAA VAR_synced
+            LDAA FLG_synced
             JNZ _failRTS
             LDAA VAR_dataOK
             AND #04h
@@ -199,7 +199,7 @@ func_getWeekday
 
 ;Function '06h' = Get month (OUTPUT = Accu), Carry = 0 if successfull 
 func_getMonth
-            LDAA VAR_synced
+            LDAA FLG_synced
             JNZ _failRTS
             LDAA VAR_dataOK
             AND #04h
@@ -211,7 +211,7 @@ func_getMonth
         
 ;Function '07h' = Get year (OUTPUT = Accu), Carry = 0 if successfull 
 func_getYear
-            LDAA VAR_synced
+            LDAA FLG_synced
             JNZ _failRTS
             LDAA VAR_dataOK
             AND #04h
@@ -259,7 +259,7 @@ decode
             JNC _dec0
 ;Time >= PARAM_SYNCPAUSE -> Time longer than 1 second
 ;Syncpoint reached
-            STZ VAR_synced
+            STZ FLG_synced
             STZ VAR_second
             STZ VAR_edgeCnt
             JMP _decEnd
@@ -289,8 +289,11 @@ newBit
 ;No longer synchronized        
 deSync  
             LDA #1 
-            STAA VAR_synced
+            STAA FLG_synced
             STZ VAR_dataOK
+            LDA #08h
+            ANDA VAR_ledsDataOK
+            STAA VAR_ledsDataOK
             JMP _decEnd
   
 ;Decode bit     
@@ -324,15 +327,15 @@ _nBit2      LDAA VAR_dataOK
             STAA VAR_year
             JMP _decEnd
         
-_nBit3      CMP #20 ;If Second/bit = 20 -> Begin of time information always '1'
+_nBit3      CMP #20
             JNC _decEnd ;Below bit 20 is nothing important
             JNZ _nBit4
-            JSR getBit
+            JSR getBit; Second/bit = 20 -> Begin of time information always '1'
             JPZ deSync ;If Bit 20 != 1 -> Not synchronized or incorrect signal
             JMP _decEnd
  
 ;Bit >20 - Get/decode data
-_nBit4      LDAA VAR_synced
+_nBit4      LDAA FLG_synced
             JNZ _decEnd
             ;Only continue if synchronized
             LDAA VAR_second
@@ -353,10 +356,11 @@ _nBit4      LDAA VAR_synced
             ;Second >= 50
             CMP #59
             JNC getYear ;Go to year decoding
-            ;Second >= 59 -> Leap second!
-            JSR getBit
-            JPZ _decEnd ;Always '0'
-            JMP deSync
+            JNZ _decEnd
+            ;Second = 59 -> Leap second!
+            JSR getBit ;Always '0'
+            JNZ deSync 
+            JMP _decEnd
 
 ;Get/decode minutes
 ;---------------------------------------------------------
@@ -614,74 +618,60 @@ _decEnd
             RTS
 
 ;--------------------------------------------------------- 
-;Display moving light if synchronized on Multi-I/O LEDs   
+;Display snyc/data status on Multi-I/O LEDs   
 ;---------------------------------------------------------
 #IFDEF SYNC_DISP
 syncDisp
-;Synced status           
-            LDAA VAR_synced
+;Display synced status           
+            LDAA FLG_synced
             JPZ _syncD0
             LDA #08h 
             EORA VAR_ledsDataOK
             STAA VAR_ledsDataOK
-            JMP _syncD7
+            JMP _syncD4
 _syncD0     LDA #08h 
             ORAA VAR_ledsDataOK
             STAA VAR_ledsDataOK
             
             LDAA VAR_second
             CMP #21
-            JNC _syncD7 ;Second <21 -> No time information fetching
+            JNC _syncD4 ;Second <21 -> No time information fetching
             CMP #29
-            JNC _syncD1 ;Second >= 21 & <29 -> Minutes
-            JPZ _syncD1 ;Second = 29 -> Minutes
+            JNC _syncD1 ;Second >= 21 & <29 -> Fetching minutes
             CMP #36
-            JNC _syncD3 ;Second >= 29 & < 36 -> Hours
-            JPZ _syncD3 ;Second = 36 -> Hours
+            JNC _syncD2 ;Second >= 29 & < 36 -> Fetching hours
             CMP #59
-            JNC _syncD5 ;Second >= 36 & < 59 -> Date
-            JPZ _syncD5 ;Second = 59 -> Date
-            JMP _syncD7
+            JNC _syncD3 ;Second >= 36 & < 59 -> Fetching date
+            JMP _syncD4
             
-;Minutes Status
+;Fetching minutes
 _syncD1     LDAA VAR_dataOK
             AND #01h
-            JNZ _sDisp2
+            JNZ _syncD4
             LDA #01h 
             EORA VAR_ledsDataOK
             STAA VAR_ledsDataOK
-            JMP _syncD7
-_sDisp2     LDA #01h
-            ORAA VAR_ledsDataOK
-            STAA VAR_ledsDataOK
-            JMP _syncD7
+            JMP _syncD4
             
-;Hours Status
-_syncD3     LDAA VAR_dataOK
+;Fetching hours
+_syncD2     LDAA VAR_dataOK
             AND #02h
             JNZ _syncD4
             LDA #02h 
             EORA VAR_ledsDataOK
             STAA VAR_ledsDataOK
-            JMP _syncD7
-_syncD4     LDA #02h
-            ORAA VAR_ledsDataOK
-            STAA VAR_ledsDataOK
-            JMP _syncD7
+            JMP _syncD4
             
-;Date Status
-_syncD5     LDAA VAR_dataOK
+;Fetching date 
+_syncD3     LDAA VAR_dataOK
             AND #04h
-            JNZ _syncD6
+            JNZ _syncD4
             LDA #04h 
             EORA VAR_ledsDataOK
             STAA VAR_ledsDataOK
-            JMP _syncD7
-_syncD6     LDA #04h
-            ORAA VAR_ledsDataOK
-            STAA VAR_ledsDataOK
 
-_syncD7     LDAA VAR_ledsDataOK
+_syncD4     LDAA VAR_dataOK
+            ORAA VAR_ledsDataOK
             JSR (KERN_IOCHANGELED)
             RTS
         
