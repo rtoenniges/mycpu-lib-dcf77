@@ -79,7 +79,9 @@
                 KERN_INSDELTIMER    EQU 02AAh
                 
                 ;[File: sl60dcf77.asm]
-                ;Comment this lines out if you dont want synced status on Multi-I/O-LEDs
+                ;Comment this line out if you dont want synced status on Multi-I/O-LEDs
+                ;Comment this line in if you use the SCC-Rack-Extension
+                ;#DEFINE SCC_BOARD 
                 
                 ;-------------------------------------;
                 ; declare variables
@@ -88,8 +90,9 @@
                 ZP_temp1            EQU  10h
                 
                 ;Constants
-                HDW_INT             EQU 7       ;IRQ7 
-                KERN_IOCHANGELED    EQU 0306h
+                HDW_INT             EQU 7       ;IRQ7
+                HDW_SCC_BOARD       EQU 3000h   ;Address of SCC board
+                KERN_IOCHANGELED    EQU 0306h   ;Kernel routine for changing the Multi-I/O-LEDs
                 CONST_SECOND        EQU 30      ;Timer divider for "pseudo second" (30 = 0,983s)
                 
                 ;Parameter
@@ -354,6 +357,7 @@
                 newBit 
                 ;Display synced status on I/O-Module LEDs
     816A 1AAC83             JSR syncDisp
+                ;Display synced status on SCC-Board
                 ;First do signal checking -> Twice as many edges+1 as seconds?
     816D 320A80             LDAA VAR_edgeCnt
     8170 05                 SEC
@@ -743,6 +747,11 @@
     8418 E21C80             ORAA VAR_ledsDataOK
     841B 1B0603             JSR (KERN_IOCHANGELED)
     841E 1F                 RTS
+                
+                
+                ;--------------------------------------------------------- 
+                ;Display snyc/data status on SCC-Board   
+                ;---------------------------------------------------------
                 
                 ;--------------------------------------------------------- 
                 ;Helper functions   

@@ -10,8 +10,10 @@
 #include <code.hsm>
 #include <interrupt.hsm>
 
-;Comment this lines out if you dont want synced status on Multi-I/O-LEDs
+;Comment this line out if you dont want synced status on Multi-I/O-LEDs
 #DEFINE SYNC_DISP 
+;Comment this line in if you use the SCC-Rack-Extension
+;#DEFINE SCC_BOARD 
 
 ;-------------------------------------;
 ; declare variables
@@ -20,8 +22,9 @@
 ZP_temp1            EQU  10h
 
 ;Constants
-HDW_INT             EQU 7       ;IRQ7 
-KERN_IOCHANGELED    EQU 0306h
+HDW_INT             EQU 7       ;IRQ7
+HDW_SCC_BOARD       EQU 3000h   ;Address of SCC board
+KERN_IOCHANGELED    EQU 0306h   ;Kernel routine for changing the Multi-I/O-LEDs
 CONST_SECOND        EQU 30      ;Timer divider for "pseudo second" (30 = 0,983s)
 
 ;Parameter
@@ -277,6 +280,10 @@ newBit
 ;Display synced status on I/O-Module LEDs
 #IFDEF SYNC_DISP
             JSR syncDisp
+#ENDIF  
+;Display synced status on SCC-Board
+#IFDEF SCC_BOARD
+            JSR sccBoard
 #ENDIF  
 ;First do signal checking -> Twice as many edges+1 as seconds?
             LDAA VAR_edgeCnt
@@ -676,6 +683,39 @@ _syncD4     LDAA VAR_dataOK
             RTS
         
 #ENDIF
+
+;--------------------------------------------------------- 
+;Display snyc/data status on SCC-Board   
+;---------------------------------------------------------
+#IFDEF SCC_BOARD
+sccBoard
+;Receiver not synced (LED off)           
+            LDAA FLG_synced
+            JPZ _sccB0
+            LDAA HDW_SCC_BOARD
+            AND #04h
+            JPZ _RTS
+            LDAA HDW_SCC_BOARD
+            EOR #04h
+            STAA HDW_SCC_BOARD
+            RTS
+            
+;Receiver synced but no data available (Toggle LED)
+_sccB0      LDAA VAR_dataOK
+            CMP #07h
+            JPZ _sccB1
+            LDAA HDW_SCC_BOARD
+            EOR #04h
+            STAA HDW_SCC_BOARD
+            RTS
+   
+;Receiver synced and data available (LED on)         
+_sccB1      LDAA HDW_SCC_BOARD
+            ORA #04h
+            STAA HDW_SCC_BOARD
+            RTS     
+#ENDIF
+
 ;--------------------------------------------------------- 
 ;Helper functions   
 ;---------------------------------------------------------
