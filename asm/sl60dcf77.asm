@@ -25,12 +25,11 @@ ZP_temp1            EQU  10h
 HDW_INT             EQU 7       ;IRQ7
 HDW_SCC_BOARD       EQU 3000h   ;Address of SCC board
 KERN_IOCHANGELED    EQU 0306h   ;Kernel routine for changing the Multi-I/O-LEDs
-CONST_SECOND        EQU 30      ;Timer divider for "pseudo second" (30 = 0,983s)
 
 ;Parameter
 PARAM_LOWHIGH       EQU 4       ;Edge time < PARAM_LOWHIGH = 0(Low), >= PARAM_LOWHIGH = 1(High)
-PARAM_SYNCPAUSE     EQU 35      ;Edge time < PARAM_SYNCPAUSE = New second/bit, >= PARAM_SYNCPAUSE = Syncpoint
-PARAM_SECOND        EQU 10      ;Edge time < PARAM_SECOND = New bit, >= PARAM_SECOND = New second
+PARAM_SYNCPAUSE     EQU 40      ;Edge time < PARAM_SYNCPAUSE = New second/bit, >= PARAM_SYNCPAUSE = Syncpoint
+PARAM_SECOND        EQU 20      ;Edge time < PARAM_SECOND = New bit, >= PARAM_SECOND = New second
 
 ;Variables
 FLG_dcfReceiver     DB  1   ;This flag is set to 1 if input comes from the DCF77-Receiver
@@ -58,12 +57,11 @@ VAR_tmpDay          DB  0
 VAR_tmpWeekday      DB  0
 VAR_tmpMonth        DB  0
 VAR_tmpYear         DB  0
+VAR_ledsDataOK      DB  0
 
 VAR_timerhandle     DB  0   ;Address of timer interrupt handle
 
-#IFDEF SYNC_DISP
-VAR_ledsDataOK      DB 0
-#ENDIF
+
 
 ;-------------------------------------;
 ; begin of assembly code
@@ -242,9 +240,9 @@ int_dcf77
         
 ;Timer interrupt
 int_timer
+            ;Measure time between two edges
             LDA FLG_dcfReceiver
             JNZ decode       
-            ;Measure time between two edges
             INC ZP_temp1
             RTS
 
@@ -298,9 +296,7 @@ deSync
             LDA #1 
             STAA FLG_synced
             STZ VAR_dataOK
-            LDA #08h
-            ANDA VAR_ledsDataOK
-            STAA VAR_ledsDataOK
+            STZ VAR_ledsDataOK
             JMP _decEnd
   
 ;Decode bit     
