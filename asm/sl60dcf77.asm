@@ -21,12 +21,10 @@
 ;Zeropointer
 ZP_temp1            EQU  10h
 
-;Constants
+;Parameter
 HDW_INT             EQU 7       ;IRQ7
 HDW_SCC_BOARD       EQU 3000h   ;Address of SCC board
 KERN_IOCHANGELED    EQU 0306h   ;Kernel routine for changing the Multi-I/O-LEDs
-
-;Parameter
 PARAM_LOWHIGH       EQU 4       ;Edge time < PARAM_LOWHIGH = 0(Low), >= PARAM_LOWHIGH = 1(High)
 PARAM_SYNCPAUSE     EQU 40      ;Edge time < PARAM_SYNCPAUSE = New second/bit, >= PARAM_SYNCPAUSE = Syncpoint
 PARAM_SECOND        EQU 20      ;Edge time < PARAM_SECOND = New bit, >= PARAM_SECOND = New second
@@ -296,7 +294,8 @@ deSync
             LDA #1 
             STAA FLG_synced
             STZ VAR_dataOK
-            STZ VAR_ledsDataOK
+            LDA #08
+            STAA VAR_ledsDataOK
             JMP _decEnd
   
 ;Decode bit     
