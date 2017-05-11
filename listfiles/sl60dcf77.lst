@@ -372,48 +372,48 @@
     8188 109E83             JMP _decEnd
                 
                 ;Decode bit     
-                _nBit0  
-    818B 320D80             LDAA VAR_second
-    818E 18D681             JNZ _nBit3
-    8191 1A1C84             JSR getBit
-    8194 187B81             JNZ deSync ;If Bit 0 != 0 -> Not synchronized or incorrect signal
+    818B 320980 _nBit0      LDAA FLG_synced
+    818E 189E83             JNZ _decEnd
+                            ;Only continue if synchronized
+                
+    8191 320D80             LDAA VAR_second
+    8194 18DC81             JNZ _nBit3
+    8197 1A1C84             JSR getBit
+    819A 187B81             JNZ deSync ;If Bit 0 != 0 -> Not synchronized or incorrect signal
                 
                 ;Second/bit = 0 -> Take over data from last minute            
-    8197 320B80             LDAA VAR_dataOK
-    819A D001               AND #01h
-    819C 19A581             JPZ _nBit1
-    819F 321580             LDAA VAR_tmpMinutes ;Take over 'minutes'
-    81A2 420E80             STAA VAR_minutes
-    81A5 320B80 _nBit1      LDAA VAR_dataOK
-    81A8 D002               AND #02h
-    81AA 19B381             JPZ _nBit2
-    81AD 321680             LDAA VAR_tmpHours ;Take over 'hours'
-    81B0 420F80             STAA VAR_hours
-    81B3 320B80 _nBit2      LDAA VAR_dataOK
-    81B6 D004               AND #04h
-    81B8 199E83             JPZ _decEnd
-    81BB 321880             LDAA VAR_tmpWeekday ;Take over 'weekday'
-    81BE 421180             STAA VAR_weekday
-    81C1 321780             LDAA VAR_tmpDay ;Take over 'day'
-    81C4 421080             STAA VAR_day
-    81C7 321980             LDAA VAR_tmpMonth ;Take over 'month'
-    81CA 421280             STAA VAR_month
-    81CD 321A80             LDAA VAR_tmpYear ;Take over 'year'
-    81D0 421380             STAA VAR_year
-    81D3 109E83             JMP _decEnd
+    819D 320B80             LDAA VAR_dataOK
+    81A0 D001               AND #01h
+    81A2 19AB81             JPZ _nBit1
+    81A5 321580             LDAA VAR_tmpMinutes ;Take over 'minutes'
+    81A8 420E80             STAA VAR_minutes
+    81AB 320B80 _nBit1      LDAA VAR_dataOK
+    81AE D002               AND #02h
+    81B0 19B981             JPZ _nBit2
+    81B3 321680             LDAA VAR_tmpHours ;Take over 'hours'
+    81B6 420F80             STAA VAR_hours
+    81B9 320B80 _nBit2      LDAA VAR_dataOK
+    81BC D004               AND #04h
+    81BE 199E83             JPZ _decEnd
+    81C1 321880             LDAA VAR_tmpWeekday ;Take over 'weekday'
+    81C4 421180             STAA VAR_weekday
+    81C7 321780             LDAA VAR_tmpDay ;Take over 'day'
+    81CA 421080             STAA VAR_day
+    81CD 321980             LDAA VAR_tmpMonth ;Take over 'month'
+    81D0 421280             STAA VAR_month
+    81D3 321A80             LDAA VAR_tmpYear ;Take over 'year'
+    81D6 421380             STAA VAR_year
+    81D9 109E83             JMP _decEnd
                 
-    81D6 7014   _nBit3      CMP #20
-    81D8 169E83             JNC _decEnd ;Below bit 20 is nothing important
-    81DB 18E781             JNZ _nBit4
-    81DE 1A1C84             JSR getBit; Second/bit = 20 -> Begin of time information always '1'
-    81E1 197B81             JPZ deSync ;If Bit 20 != 1 -> Not synchronized or incorrect signal
-    81E4 109E83             JMP _decEnd
+    81DC 7014   _nBit3      CMP #20
+    81DE 169E83             JNC _decEnd ;Below bit 20 is nothing important
+    81E1 18ED81             JNZ _nBit4
+    81E4 1A1C84             JSR getBit; Second/bit = 20 -> Begin of time information always '1'
+    81E7 197B81             JPZ deSync ;If Bit 20 != 1 -> Not synchronized or incorrect signal
+    81EA 109E83             JMP _decEnd
                 
                 ;Bit >20 - Get/decode data
-    81E7 320980 _nBit4      LDAA FLG_synced
-    81EA 189E83             JNZ _decEnd
-                            ;Only continue if synchronized
-    81ED 320D80             LDAA VAR_second
+    81ED 320D80 _nBit4      LDAA VAR_second
     81F0 701D               CMP #29
     81F2 161A82             JNC getMinutes ;Go to minute decoding
                             ;Second >= 29

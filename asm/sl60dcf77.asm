@@ -299,7 +299,10 @@ deSync
             JMP _decEnd
   
 ;Decode bit     
-_nBit0  
+_nBit0      LDAA FLG_synced
+            JNZ _decEnd
+            ;Only continue if synchronized
+          
             LDAA VAR_second
             JNZ _nBit3
             JSR getBit
@@ -337,10 +340,7 @@ _nBit3      CMP #20
             JMP _decEnd
  
 ;Bit >20 - Get/decode data
-_nBit4      LDAA FLG_synced
-            JNZ _decEnd
-            ;Only continue if synchronized
-            LDAA VAR_second
+_nBit4      LDAA VAR_second
             CMP #29
             JNC getMinutes ;Go to minute decoding
             ;Second >= 29
