@@ -30,7 +30,7 @@ KERN_IOCHANGELED    EQU 0306h   ;Kernel routine for changing the Multi-I/O-LEDs
 PARAM_LOWHIGH       SET 4       ;Edge time < PARAM_LOWHIGH = 0(Low), >= PARAM_LOWHIGH = 1(High)
 PARAM_SYNCPAUSE     SET 40      ;Edge time < PARAM_SYNCPAUSE = New second/bit, >= PARAM_SYNCPAUSE = Syncpoint
 PARAM_SECOND        SET 20      ;Edge time < PARAM_SECOND = New bit, >= PARAM_SECOND = New second
-PARAM_IGNORE        SET 2       ;Edge time < PARAM_IGNORE = Signal interference (ignore)
+PARAM_IGNORE        SET 1       ;Edge time < PARAM_IGNORE = Signal interference (ignore)
 
 ;Variables
 FLG_dcfReceiver     DB  1   ;This flag is set to 1 if input comes from the DCF77-Receiver

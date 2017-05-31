@@ -98,7 +98,7 @@
                 PARAM_LOWHIGH       SET 4       ;Edge time < PARAM_LOWHIGH = 0(Low), >= PARAM_LOWHIGH = 1(High)
                 PARAM_SYNCPAUSE     SET 40      ;Edge time < PARAM_SYNCPAUSE = New second/bit, >= PARAM_SYNCPAUSE = Syncpoint
                 PARAM_SECOND        SET 20      ;Edge time < PARAM_SECOND = New bit, >= PARAM_SECOND = New second
-                PARAM_IGNORE        SET 2       ;Edge time < PARAM_IGNORE = Signal interference (ignore)
+                PARAM_IGNORE        SET 1       ;Edge time < PARAM_IGNORE = Signal interference (ignore)
                 
                 ;Variables
     8008 01     FLG_dcfReceiver     DB  1   ;This flag is set to 1 if input comes from the DCF77-Receiver
@@ -346,7 +346,7 @@
                 
                 ;Time < PARAM_SYNCPAUSE -> New second or bit information     
                 ;Count seconds, Check signal for errors   
-    815F 7002   _dec0       CMP #PARAM_IGNORE
+    815F 7001   _dec0       CMP #PARAM_IGNORE
     8161 176A81             JPC _dec1
     8164 8D0A80             DECA VAR_edgeCnt
     8167 10B483             JMP _decIgnore
