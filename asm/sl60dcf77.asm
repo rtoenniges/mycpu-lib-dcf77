@@ -19,7 +19,7 @@
 ; declare variables
 
 ;Zeropointer
-ZP_temp1            EQU  10h
+ZP_temp1            EQU  08h
 
 ;Addresses
 HDW_INT             EQU 7       ;IRQ7
