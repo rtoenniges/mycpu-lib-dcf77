@@ -15,6 +15,7 @@
 ;Comment this line in if you use the SCC-Rack-Extension
 ;#DEFINE SCC_BOARD 
 
+
 ;-------------------------------------;
 ; declare variables
 
