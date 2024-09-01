@@ -2,14 +2,14 @@
 ;******************************************
 ;****  DCF77 Library - Test program *******
 ;******************************************
-;******  by Robin Tönniges (2016)  ********
+;****  by Robin TÃ¶nniges (2016-2024)  *****
 ;******************************************
 
 ;***********************************************
 ;*Parameter:
 ;*Nothing = Set system clock with DCF77 - Data
 ;*Number 1-7 = Display data set 1-7 from the library
-;*Number 8 = Display current time and date
+;*Number 99 = Display current time and date
 ;*
 ;*
 ;*
@@ -25,7 +25,7 @@
 ;Declare variables
 DCF77LIB        EQU 60h
 
-ZP_paramPtr     EQU 00h
+ZP_paramPtr     EQU 10h
 
 STR_done        DB "System clock successfully set!",0
 STR_fault       DB "Receiver not synchronized or data incomplete!",0
@@ -48,8 +48,8 @@ main
 
 ;Get parameter from console
 skipPar LPA
-        JPZ setSysTime
-        CMP #20h
+        JPZ setSysTime	;No parameter -> set system clock
+        CMP #20h ;Search for "space" -> ' '
         JNZ skipPar
 
 _skp0   SPT ZP_paramPtr
@@ -60,9 +60,11 @@ _skp0   SPT ZP_paramPtr
         
         LPT ZP_paramPtr
         JSR (KERN_STRING2NUMBER)
-        CMP #8
-        JPZ printTime   ;Parameter '8' -> print date/time
-        PHA   
+        CMP #99
+        JPZ printTime   ;Parameter '99' -> print date/time
+		CMP #8
+		PHA
+		JPZ getMet
 
 ;Parameter 0-7 -> Print data from library        
         LDA #DCF77LIB
@@ -75,6 +77,16 @@ _skp0   SPT ZP_paramPtr
         JSR (KERN_PRINTDEZ)
         CLA
         RTS
+
+;Parameter 8 -> Print meteo data from library 
+getMet  LDA #DCF77LIB
+        JSR (KERN_LIBSELECT)        
+        PLA
+        JSR (KERN_LIBCALL)
+        JPC printFault
+        JSR (KERN_PRINTSTR)
+        CLA
+        RTS  
 
 setSysTime
         LDA #DCF77LIB
@@ -150,7 +162,7 @@ printTime
         CLX
         CLY
         JSR (KERN_PRINTDEZ)
-        LDA #13
+        LDA #13 ;\r
         JSR (KERN_PRINTCHAR)
         LDA #4 ;Day
         JSR (KERN_LIBCALL)
