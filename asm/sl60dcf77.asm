@@ -200,17 +200,9 @@ funcdispatch
             DEC 
             JPZ func_getYear        ;Function 07h 
             DEC 
-            JPZ func_getEntryPoint  ;Function 08h
+            JPZ func_getMeteoTime   ;Function 08h
             DEC 
-            JPZ func_getBitCount    ;Function 09h
-            DEC 
-            JPZ func_getEdgeCount   ;Function 0Ah
-            DEC 
-            JPZ func_getSyncFlag    ;Function 0Bh
-            DEC 
-            JPZ func_getEdgeFlag    ;Function 0Ch
-            DEC 
-            JPZ func_getMeteoTime   ;Function 0Dh
+            JPZ func_getEntryPoint  ;Function 09h
             JMP _failRTS
   
        
@@ -293,33 +285,8 @@ func_getYear
             CMP #0FFh
             JPZ _failRTS
             JMP _RTS
-
-;Function '08h' = Get entrypoint of library         
-func_getEntryPoint
-            LPT #funcdispatch
-            JMP _RTS
             
-;Function '09h' = Get bit counter (OUTPUT = Accu), Carry = 0 if successfull
-func_getBitCount
-            LDAA VAR_second
-            JMP _RTS
-            
-;Function '0Ah' = Get edge counter (OUTPUT = Accu), Carry = 0 if successfull
-func_getEdgeCount
-            LDAA VAR_edgeCnt
-            JMP _RTS
-            
-;Function '0Bh' = Get sync flag (OUTPUT = Accu), Carry = 0 if successfull
-func_getSyncFlag
-            LDAA FLG_synced
-            JMP _RTS
-            
-;Function '0Ch' = Get edge flag (OUTPUT = Accu), Carry = 0 if successfull
-func_getEdgeFlag
-            LDAA FLG_dcfReceiver
-            JMP _RTS
-            
-;Function '0Dh' = Get encoded METEO Information (X/Y = Pointer to string), Carry = 0 if successfull
+;Function '08h' = Get encoded METEO Information (X/Y = Pointer to string), Carry = 0 if successfull
 ;Bit 0-41 = meteotime (3 minutes)
 ;Bit 42-81 = time information (Minutes + Hours + Day + Month + Weekday + Year) without parity
 func_getMeteoTime
@@ -330,6 +297,12 @@ func_getMeteoTime
             JPZ _failRTS
             LPT ZP_meteoRead
             JMP _RTS
+
+;Function '09h' = Get entrypoint of library         
+func_getEntryPoint
+            LPT #funcdispatch
+            JMP _RTS
+            
 
 ;--------------------------------------------------------- 
 ;Interrupt routines   
