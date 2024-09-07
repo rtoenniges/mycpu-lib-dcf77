@@ -2,7 +2,7 @@
 ;******************************************
 ;***********  DCF77 Library  **************
 ;******************************************
-;***** by Robin Tönniges (2016-2024) *****
+;***** by Robin Tönniges (2016-2024) ******
 ;******************************************
 
 
@@ -14,7 +14,7 @@
 ;Comment this line out if you dont want synced status on Multi-I/O-LEDs
 #DEFINE SYNC_DISP 
 ;Comment this line in if you use the SCC-Rack-Extension
-;#DEFINE SCC_BOARD 
+#DEFINE SCC_BOARD 
 ;Comment this line in if you want debug output
 ;#DEFINE DEBUG
 
@@ -58,7 +58,7 @@ KERN_IOCHANGELED    EQU 0306h   ;Kernel routine for changing the Multi-I/O-LEDs
 PARAM_LOWHIGH       SET 4       ;Edge time < PARAM_LOWHIGH      = 0(Low),           >= PARAM_LOWHIGH    = 1(High)
 PARAM_SYNCPAUSE     SET 50      ;Edge time < PARAM_SYNCPAUSE    = New second/bit,   >= PARAM_SYNCPAUSE  = Syncpoint
 PARAM_SECOND        SET 20      ;Edge time < PARAM_SECOND       = New bit,          >= PARAM_SECOND     = New second
-PARAM_IGNORE        SET 1       ;Edge time < PARAM_IGNORE       = Signal interference (ignore)
+PARAM_IGNORE        SET 2       ;Edge time < PARAM_IGNORE       = Signal interference (ignore)
 
 ;Variables
 FLG_firstStart      DB  1   ;This flag indicates first start of library -> Ignore first edge
@@ -145,7 +145,12 @@ initfunc
             CLA    
             LPT #int_timer
             JSR (KERN_MULTIPLEX)
-            STAA VAR_timerhandle  ;Save adress of timerhandle  
+            STAA VAR_timerhandle  ;Save adress of timerhandle 
+
+;Register idle function
+        SEC
+        LPT #int_idle
+        JSR (KERN_SETIDLEFUNC)
 
 ;If sync display enabled clear LEDs 
 #IFDEF SYNC_DISP
@@ -168,6 +173,10 @@ termfunc
             ;Disable spinlock
             CLC
             JSR (KERN_SPINLOCK)
+            ;Disable idle function
+            CLC
+            LPT #int_idle
+            JSR (KERN_SETIDLEFUNC)
 
 #IFDEF SYNC_DISP
             ;Set LEDs to default
@@ -319,14 +328,18 @@ int_dcf77
 int_timer
             ;Measure time between two edges
             LDAA FLG_dcfReceiver
-            JNZ decode       
+            JNZ _RTS       
             INCA VAR_bitData
             RTS
+
+;Idle function
+int_idle
+            LDAA FLG_dcfReceiver
+            JPZ _RTS            
 
 ;--------------------------------------------------------- 
 ;DCF77 decoding   
 ;---------------------------------------------------------
-decode
 
 ;From this point no interrupt should break the programm
             SEC
@@ -559,10 +572,9 @@ getMeteo
             LDA #08h
             ORAA VAR_dataOK
             STAA VAR_dataOK
-            LPT ZP_meteoRead ;Swap Read and write register
+            LPT ZP_meteoRead ;Swap read and write register
             PHR
-            LPT ZP_meteoWrite
-            SPT ZP_meteoRead
+			MOV ZP_meteoRead,ZP_meteoWrite
             PLR
             SPT ZP_meteoWrite
 
