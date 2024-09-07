@@ -14,9 +14,13 @@
 ;Comment this line out if you dont want synced status on Multi-I/O-LEDs
 #DEFINE SYNC_DISP 
 ;Comment this line in if you use the SCC-Rack-Extension
-;#DEFINE SCC_BOARD 
+#DEFINE SCC_BOARD 
 ;Comment this line in if you want debug output
 ;#DEFINE DEBUG
+
+;Debug Message
+;Second[MeteoCount1|MeteoCount2] {Additional comments}
+;Example: 28[28|49] H(6) Minute: 3
 
 
 #IFDEF DEBUG
@@ -55,7 +59,7 @@ KERN_IOCHANGELED    EQU 0306h   ;Kernel routine for changing the Multi-I/O-LEDs
 ;High       = 200ms         is theoretically 6
 ;Syncpause  = 1800-1900ms   is theoretically 54-57
 ;New second = 800-900ms     is theoretically 24-27
-PARAM_LOWHIGH       SET 4       ;Edge time < PARAM_LOWHIGH      = 0(Low),           >= PARAM_LOWHIGH    = 1(High)
+PARAM_LOWHIGH       SET 5       ;Edge time < PARAM_LOWHIGH      = 0(Low),           >= PARAM_LOWHIGH    = 1(High)
 PARAM_SYNCPAUSE     SET 50      ;Edge time < PARAM_SYNCPAUSE    = New second/bit,   >= PARAM_SYNCPAUSE  = Syncpoint
 PARAM_SECOND        SET 20      ;Edge time < PARAM_SECOND       = New bit,          >= PARAM_SECOND     = New second
 PARAM_IGNORE        SET 2       ;Edge time < PARAM_IGNORE       = Signal interference (ignore)
@@ -94,7 +98,7 @@ VAR_meteo2          DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
                     DB  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0
                     DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
                     
-ZP_meteoWrite       EQU 20h    ;Write pointer for meteo data
+ZP_meteoWrite       EQU 20h ;Write pointer for meteo data
 ZP_meteoRead        EQU 22h ;Read pointer for meteo data
 VAR_meteoCount1     DB  0 ;Weather bit counter (0-41)
 VAR_meteoCount2     DB  0 ;Time bit counter (42-81)
@@ -148,9 +152,9 @@ initfunc
             STAA VAR_timerhandle  ;Save adress of timerhandle 
 
 ;Register idle function
-        SEC
-        LPT #int_idle
-        JSR (KERN_SETIDLEFUNC)
+            SEC
+            LPT #int_idle
+            JSR (KERN_SETIDLEFUNC)
 
 ;If sync display enabled clear LEDs 
 #IFDEF SYNC_DISP
@@ -224,8 +228,6 @@ func_getSeconds
 
 ;Function '02h' = Get minutes (OUTPUT = Accu), Carry = 0 if successfull         
 func_getMinutes  
-            LDAA FLG_synced
-            JNZ _failRTS
             LDAA VAR_dataOK
             AND #01h
             JPZ _failRTS
@@ -236,8 +238,6 @@ func_getMinutes
         
 ;Function '03h' = Get hours (OUTPUT = Accu), Carry = 0 if successfull 
 func_getHours
-            LDAA FLG_synced
-            JNZ _failRTS
             LDAA VAR_dataOK
             AND #02h
             JPZ _failRTS
@@ -248,8 +248,6 @@ func_getHours
        
 ;Function '04h' = Get day (OUTPUT = Accu), Carry = 0 if successfull 
 func_getDay
-            LDAA FLG_synced
-            JNZ _failRTS
             LDAA VAR_dataOK
             AND #04h
             JPZ _failRTS
@@ -261,8 +259,6 @@ func_getDay
 ;Function '05h' = Get weekday (OUTPUT = Accu), Carry = 0 if successfull 
 ;1 = monday, 2 = tuesday, 3 = wednesday, 4 = thursday, 5 = friday, 6 = saturday, 7 = sunday
 func_getWeekday
-            LDAA FLG_synced
-            JNZ _failRTS
             LDAA VAR_dataOK
             AND #04h
             JPZ _failRTS
@@ -273,8 +269,6 @@ func_getWeekday
 
 ;Function '06h' = Get month (OUTPUT = Accu), Carry = 0 if successfull 
 func_getMonth
-            LDAA FLG_synced
-            JNZ _failRTS
             LDAA VAR_dataOK
             AND #04h
             JPZ _failRTS
@@ -285,8 +279,6 @@ func_getMonth
         
 ;Function '07h' = Get year (OUTPUT = Accu), Carry = 0 if successfull 
 func_getYear
-            LDAA FLG_synced
-            JNZ _failRTS
             LDAA VAR_dataOK
             AND #04h
             JPZ _failRTS
@@ -299,8 +291,6 @@ func_getYear
 ;Bit 0-41 = meteotime (3 minutes)
 ;Bit 42-81 = time information (Minutes + Hours + Day + Month + Weekday + Year) without parity
 func_getMeteoTime
-            LDAA FLG_synced
-            JNZ _failRTS
             LDAA VAR_dataOK
             AND #08h
             JPZ _failRTS
@@ -374,12 +364,12 @@ _dec0       LDAA VAR_bitData
 ;Count seconds, Check signal for errors   
 _dec1       CMP #PARAM_IGNORE
             JPC _dec2
-			;Interference detected
+            ;Interference detected
             JMP _decIgnore
-			
-_dec2       CMP #PARAM_SECOND ;Time >= PARAM_SECOND -> Next second
+            
+_dec2       CMP #PARAM_SECOND 
             JNC newBit
-            INCA VAR_second  
+            INCA VAR_second ;Time >= PARAM_SECOND -> Next second
             JMP _decEnd
             
 
@@ -465,7 +455,7 @@ deSync
 ;Decode bit     
 _nBit0      LDAA FLG_synced
             JPZ _nBit5 ;Only continue if synchronized
-			
+            
 ;DEBUG print desynchronisation            
 #IFDEF DEBUG
     LDA #' '
@@ -475,6 +465,7 @@ _nBit0      LDAA FLG_synced
 #ENDIF 
 
             JMP _decEnd
+
 _nBit5      LDAA VAR_second
             JNZ _nBit3
             JSR getBit
@@ -503,14 +494,15 @@ _nBit2      LDAA VAR_dataOK
             LDAA VAR_tmpYear ;Take over 'year'
             STAA VAR_year
             JMP _decEnd
-        
+
+;Bit > 0        
 _nBit3      CMP #20
             JNZ _nBit4
             JSR getBit ;Second/bit = 20 -> Begin of time information always '1'
             JPZ deSync ;If Bit 20 != 1 -> Not synchronized or incorrect signal
             JMP _decEnd
  
-;Bit >20 - Get/decode data
+;Bit != 20 - Get/decode data
 _nBit4      LDAA VAR_second
             CMP #15
             JNC getMeteo ;Go to meteo
@@ -550,9 +542,8 @@ getMeteo
             AND #01h
             JPZ _gMet12 ;No minute data available -> Skip meteo section
             LDAA VAR_minutes
-            ADC #57
             MOD #3
-            JPZ _gMet10 ;//Check for start minute -> Last minute + 1 = 1, 4, 7, 10, ...
+            JPZ _gMet10 ;//Check for start minute -> = 0, 3, 6, 9, ...
             ;Minute -> n+1 or n+2
             LDAA VAR_meteoCount1
             CMP #14
@@ -560,13 +551,12 @@ getMeteo
             JSR getBitChar
             LDXA VAR_meteoCount1
             STA (ZP_meteoWrite),X
-            INX
-            STXA VAR_meteoCount1        
+            INCA VAR_meteoCount1        
             SAX
-            CMP #42
+            CMP #41
             JNZ _decEnd
             ;Last bit received
-            LDA #0
+            CLA
             LDX #82
             STA (ZP_meteoWrite),X ;Terminate String with 0
             LDA #08h
@@ -574,7 +564,7 @@ getMeteo
             STAA VAR_dataOK
             LPT ZP_meteoRead ;Swap read and write register
             PHR
-			MOV ZP_meteoRead,ZP_meteoWrite
+            MOV ZP_meteoRead,ZP_meteoWrite
             PLR
             SPT ZP_meteoWrite
 
@@ -593,7 +583,7 @@ _gMet12     STZA VAR_meteoCount1 ;Reset bit counter
             STZA VAR_meteoCount2 ;Reset bit counter            
             JMP _decEnd    
             
-_gMet10     LDAA VAR_second ;Start minute (1, 4, 7, 10, ...)
+_gMet10     LDAA VAR_second ;Start minute (0, 3, 6, 9, ...)
             CMP #1
             JNZ _gMet11 ;Bit > 1 -> Write to Array
             STZA VAR_meteoCount1 ;First minute & first bit -> Reset bit counter
@@ -601,8 +591,7 @@ _gMet10     LDAA VAR_second ;Start minute (1, 4, 7, 10, ...)
 _gMet11     JSR getBitChar
             LDXA VAR_meteoCount1
             STA (ZP_meteoWrite),X
-            INX
-            STXA VAR_meteoCount1
+            INCA VAR_meteoCount1
             JMP _decEnd        
 
 
@@ -627,8 +616,7 @@ _gMet20     LDAA VAR_meteoCount1
             JSR getBitChar
             LDXA VAR_meteoCount2
             STA (ZP_meteoWrite),X
-            INX
-            STXA VAR_meteoCount2
+            INCA VAR_meteoCount2
 
 ;Get bit (minutes)
 _gMin0      JSR getBit
@@ -644,8 +632,7 @@ _gMet21     LDAA VAR_meteoCount2
             LDA #'0'
             LDXA VAR_meteoCount2
             STA (ZP_meteoWrite),X
-            INX
-            STXA VAR_meteoCount2
+            INCA VAR_meteoCount2
 
 ;Last bit
 ;Check parity (minutes)        
@@ -716,8 +703,7 @@ _gMet30     LDAA VAR_meteoCount1
             JSR getBitChar
             LDXA VAR_meteoCount2
             STA (ZP_meteoWrite),X
-            INX
-            STXA VAR_meteoCount2
+            INCA VAR_meteoCount2
 
 ;Get bit (hours)
 _gHrs0      JSR getBit
@@ -735,8 +721,7 @@ _gMet31     LDAA VAR_meteoCount2
             STA (ZP_meteoWrite),X ; 1. '0'
             INX
             STA (ZP_meteoWrite),X ; 2. '0'
-            INX
-            STXA VAR_meteoCount2
+            INCA VAR_meteoCount2
 
 ;Last bit
 ;Check parity (hours)         
@@ -805,8 +790,7 @@ _gMet40     LDAA VAR_meteoCount1
             JSR getBitChar
             LDXA VAR_meteoCount2
             STA (ZP_meteoWrite),X
-            INX
-            STXA VAR_meteoCount2
+            INCA VAR_meteoCount2
   
 ;Get bit (day)      
 _gDay0      JSR getBit
@@ -871,8 +855,7 @@ _gMet50     LDAA VAR_meteoCount1
             JSR getBitChar
             LDXA VAR_meteoCount2
             STA (ZP_meteoWrite),X
-            INX
-            STXA VAR_meteoCount2
+            INCA VAR_meteoCount2
 
 ;Get bit (weekday)    
 _getWDay0   JSR getBit
@@ -936,8 +919,7 @@ _gMet60     LDAA VAR_meteoCount1
             JSR getBitChar
             LDXA VAR_meteoCount2
             STA (ZP_meteoWrite),X
-            INX
-            STXA VAR_meteoCount2
+            INCA VAR_meteoCount2
         
 ;Get bit (month)
 _gMon0      JSR getBit
@@ -1002,8 +984,7 @@ _gMet70     LDAA VAR_meteoCount1
             JSR getBitChar
             LDXA VAR_meteoCount2
             STA (ZP_meteoWrite),X
-            INX
-            STXA VAR_meteoCount2
+            INCA VAR_meteoCount2
 
 ;Get bit (year)
 _gYear0     SHRA VAR_bitData+1
@@ -1169,7 +1150,7 @@ sccBoard
 ;Receiver synced but no data available (Toggle LED)
 _sccB0      LDAA VAR_dataOK
             AND #07h
-			CMP #07h
+            CMP #07h
             JPZ _sccB1
             LDAA HDW_SCC_BOARD
             EOR #04h
