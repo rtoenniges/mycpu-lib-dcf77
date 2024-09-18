@@ -5,11 +5,11 @@
 ;***** by Robin Tönniges (2016-2024) ******
 ;******************************************
 
-
 #include <sys.hsm>
 #include <library.hsm>
-#include <code.hsm>
 #include <interrupt.hsm>
+#include <time.hsm> 
+#include <mem.hsm> 
 
 ;Comment this line out if you dont want synced status on Multi-I/O-LEDs
 #DEFINE SYNC_DISP 
@@ -115,8 +115,6 @@ VAR_ledsDataOK      DB  0
 
 VAR_timerhandle     DB  0   ;Address of timer interrupt handle
 
-
-
 ;-------------------------------------;
 ; begin of assembly code
 
@@ -125,6 +123,7 @@ codestart
 ;--------------------------------------------------------- 
 ;Library handling  
 ;---------------------------------------------------------  
+
 
 ;Library initialization
 ;---------------------------------------------------------   
@@ -303,7 +302,7 @@ func_getMeteoTime
 func_getEntryPoint
             LPT #funcdispatch
             JMP _RTS
-            
+
 
 ;--------------------------------------------------------- 
 ;Interrupt routines   
@@ -318,6 +317,22 @@ int_dcf77
             STZA FLG_firstStart
             RTS
 
+            ;Check for interference
+            LDAA VAR_bitCount
+            CMP #PARAM_IGNORE
+            JPC _rInt0
+            ;Interference detected -> Ignore
+
+;DEBUG print interference            
+#IFDEF DEBUG
+    LDA #13 ;\r
+    JSR (KERN_PRINTCHAR)
+    LPT #STR_interference
+    JSR (KERN_PRINTSTR)
+#ENDIF
+
+            RTS
+
 _rInt0      LDA #1 
             STAA FLG_dcfReceiver ;Flank detected -> Set flag (Pause timer count)
             INCA VAR_edgeCnt ;Count edges (For signal error detection)
@@ -326,9 +341,9 @@ _rInt0      LDA #1
 			STZA VAR_bitCount
 			STZA FLG_dcfReceiver ;Resume timer count
 			
-            LDAA VAR_bitCache ;Synchronize with signal -> Detect syncpoint/-gap
-            CMP #PARAM_SYNCPAUSE  
-            JNC _rInt1
+            ;LDAA VAR_bitCache 
+            CMP #PARAM_SYNCPAUSE ;Synchronize with signal -> Detect syncpoint/-gap
+            JNC _rInt2
             ;Time >= PARAM_SYNCPAUSE -> Time longer than 1 second
             ;Syncpoint reached
             STZA FLG_synced
@@ -343,26 +358,8 @@ _rInt0      LDA #1
 #ENDIF
 
 			RTS
-			
-            ;Time < PARAM_SYNCPAUSE -> New second or bit information     
-            ;Count seconds, Check signal for errors   
-_rInt1      LDAA VAR_bitCache
-            CMP #PARAM_IGNORE
-            JPC _rInt2
-            ;Interference detected
-            DECA VAR_edgeCnt
-			
-;DEBUG print interference            
-#IFDEF DEBUG
-    LDA #13 ;\r
-    JSR (KERN_PRINTCHAR)
-    LPT #STR_interference
-    JSR (KERN_PRINTSTR)
-#ENDIF
 
-			RTS
-
-;Time >= PARAM_IGNORE          
+;Time < PARAM_SYNCPAUSE          
 _rInt2      CMP #PARAM_SECOND 
             JNC _rInt3
             INCA VAR_second ;Time >= PARAM_SECOND -> Next second
@@ -388,11 +385,13 @@ deSync
             STZA VAR_meteoCount2
   
 ;New bit -> Ready for decode   
-_rInt4      LDAA FLG_synced
-            JPZ _rInt5 ;Only continue if synchronized		
-            
+_rInt4      LDA #1
+            STAA FLG_dcfReceiver+1
+            		          
 ;DEBUG print desynchronisation            
 #IFDEF DEBUG
+    LDAA FLG_synced
+    JPZ _RTS
     LDA #13 ;\r
     JSR (KERN_PRINTCHAR)
     LPT #STR_lost_sync
@@ -401,9 +400,6 @@ _rInt4      LDAA FLG_synced
 
             RTS
 
-_rInt5      LDA #1
-            STAA FLG_dcfReceiver+1
-            RTS
 
 ;END - Receiver interrupt
 ;<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -420,6 +416,7 @@ int_timer
             RTS
 ;END - Timer interrupt
 ;<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
 
 
 ;BEGIN - Idle function (Bit decoding)
@@ -440,12 +437,15 @@ int_idle
 ;---------------------------------------------------------
 ;Display synced status on I/O-Module LEDs
 #IFDEF SYNC_DISP
-            JSR syncDisp
+        JSR syncDisp
 #ENDIF  
 ;Display synced status on SCC-Board
 #IFDEF SCC_BOARD
-            JSR sccBoard
+        JSR sccBoard
 #ENDIF  
+
+            LDAA FLG_synced
+            JNZ _RTS
 
 ;DEBUG print time measurement and bit information
 #IFDEF DEBUG
@@ -493,41 +493,69 @@ _dbg1   JSR (KERN_PRINTCHAR)
         JSR (KERN_PRINTCHAR) 
 #ENDIF 
 
-_nBit5      LDAA VAR_second
+            LDAA VAR_second
             JNZ _nBit3
             JSR getBit
             JNZ deSync ;If Bit 0 != 0 -> Not synchronized or incorrect signal
             
-;Second/bit = 0 -> Take over data from last minute            
-            LDAA VAR_dataOK
+;Second/bit = 0 -> Take over data from last minute    
+            LDAA FLG_synced
+            JNZ _RTS
+            LDAA VAR_second
+            TAY			
+_nBit0      LDAA VAR_dataOK
             AND #01h
             JPZ _nBit1
             LDAA VAR_tmpMinutes ;Take over 'minutes'
             STAA VAR_minutes
+			TAX
 _nBit1      LDAA VAR_dataOK
             AND #02h
             JPZ _nBit2
             LDAA VAR_tmpHours ;Take over 'hours'
             STAA VAR_hours
+			;Set system time
+			PHA
+            LDAA VAR_dataOK
+            AND #03h
+			CMP #03h
+			JNZ _RTS
+			PLA
+			CPY #0
+			JNZ _nBit2 ;Sync every minute at xx:xx:00
+            SEC
+            JSR (KERN_GETSETTIME)
+			
 _nBit2      LDAA VAR_dataOK
             AND #04h
-            JPZ _decEnd
+            JPZ _RTS
+            LDAA VAR_tmpYear ;Take over 'year'
+            STAA VAR_year
+			TAY
+            LDAA VAR_tmpMonth ;Take over 'month'
+            STAA VAR_month
+			TAX
             LDAA VAR_tmpWeekday ;Take over 'weekday'
             STAA VAR_weekday
             LDAA VAR_tmpDay ;Take over 'day'
             STAA VAR_day
-            LDAA VAR_tmpMonth ;Take over 'month'
-            STAA VAR_month
-            LDAA VAR_tmpYear ;Take over 'year'
-            STAA VAR_year
-            JMP _decEnd
+            ;Set system date
+			PHA
+			LDAA VAR_second
+			CMP #0
+			JNZ _RTS ;Sync every minute at xx:xx:00
+			PLA
+            SEC
+            JSR (KERN_GETSETDATE)
+
+            JMP _RTS
 
 ;Bit > 0        
 _nBit3      CMP #20
             JNZ _nBit4
             JSR getBit ;Second/bit = 20 -> Begin of time information always '1'
             JPZ deSync ;If Bit 20 != 1 -> Not synchronized or incorrect signal
-            JMP _decEnd
+            JMP _RTS
  
 ;Bit != 20 - Get/decode data
 _nBit4      LDAA VAR_second
@@ -535,7 +563,7 @@ _nBit4      LDAA VAR_second
             JNC getMeteo ;Go to meteo
             ;Second >= 15
             CMP #21
-            JNC _decEnd ; Ignore bit 15-20
+            JNC _RTS ; Ignore bit 15-20
             ;Second >= 21
             CMP #29
             JNC getMinutes ;Go to minute decoding
@@ -555,11 +583,11 @@ _nBit4      LDAA VAR_second
             CMP #59
             JNC getYear ;Go to year decoding
             ;Second >= 59
-            JNZ _decEnd
+            JNZ _RTS
             ;Second = 59 -> Leap second!
             JSR getBit ;Always '0'
             JNZ deSync 
-            JMP _decEnd
+            JMP _RTS
 
 
 ;Get/decode meteotime
@@ -572,14 +600,14 @@ getMeteo
             ;Minute -> n+1 or n+2
             LDAA VAR_meteoCount1
             CMP #14
-            JNC _decEnd ;Previous data not complete
+            JNC _RTS ;Previous data not complete
 			TAX
             JSR getBitChar
             STA (ZP_meteoWrite),X
             INCA VAR_meteoCount1        
             TXA
             CMP #41
-            JNZ _decEnd
+            JNZ _RTS
             ;Last bit received
             CLA
             LDX #82
@@ -607,7 +635,7 @@ getMeteo
 
 _gMet12     STZA VAR_meteoCount1 ;Reset bit counter
             STZA VAR_meteoCount2 ;Reset bit counter            
-            JMP _decEnd    
+            JMP _RTS    
             
 _gMet10     LDAA VAR_second ;Start minute (0, 3, 6, 9, ...)
             CMP #1
@@ -618,7 +646,7 @@ _gMet11     JSR getBitChar
             LDXA VAR_meteoCount1
             STA (ZP_meteoWrite),X
             INCA VAR_meteoCount1
-            JMP _decEnd        
+            JMP _RTS        
 
 
 ;Get/decode minutes
@@ -649,7 +677,7 @@ _gMin0      JSR getBit
             ORAA VAR_bitCache+1
             SHR
             STAA VAR_bitCache+1
-            JMP _decEnd
+            JMP _RTS
 
 ;*** Get meteo 2/2 ***
 _gMet21     LDAA VAR_meteoCount2
@@ -686,7 +714,7 @@ _pMinBAD    LDA #00Eh ;Parity n.OK
     JSR (KERN_PRINTSTR)
 #ENDIF 
 
-            JMP _decEnd
+            JMP _RTS
         
 _pMin0      PLA ;Bit count = "even"
             JNZ _pMinBAD
@@ -710,7 +738,7 @@ _pMinOK     LDAA VAR_bitCache+1
     CLY
     JSR (KERN_PRINTDEZ)
 #ENDIF 
-            JMP _decEnd
+            JMP _RTS
         
     
 ;Get/decode hours
@@ -736,7 +764,7 @@ _gHrs0      JSR getBit
             ORAA VAR_bitCache+1
             SHR
             STAA VAR_bitCache+1
-            JMP _decEnd
+            JMP _RTS
 
 ;*** Get meteo 2/2 ***
 _gMet31     LDAA VAR_meteoCount2
@@ -777,7 +805,7 @@ _pHrsBAD    LDA #00Dh ;Parity n.OK
     JSR (KERN_PRINTSTR)
 #ENDIF 
 
-            JMP _decEnd
+            JMP _RTS
             
 _pHrs0      PLA ;Bit count = "even"
             JNZ _pHrsBAD
@@ -800,7 +828,7 @@ _pHrsOK     LDAA VAR_bitCache+1
     CLY
     JSR (KERN_PRINTDEZ)
 #ENDIF 
-            JMP _decEnd
+            JMP _RTS
                 
         
 ;Get/decode day
@@ -827,7 +855,7 @@ _gDay0      JSR getBit
             ;Check for last bit
             LDAA VAR_second
             CMP #41       
-            JNZ _decEnd 
+            JNZ _RTS 
 
 ;*** Get meteo 2/2 ***
             LDAA VAR_meteoCount2
@@ -865,7 +893,7 @@ _gDay1      SHRA VAR_bitCache+1
     CLY
     JSR (KERN_PRINTDEZ)
 #ENDIF 
-            JMP _decEnd        
+            JMP _RTS        
         
         
 ;Get/decode weekday
@@ -892,7 +920,7 @@ _getWDay0   JSR getBit
             ;Check for last bit
             LDAA VAR_second
             CMP #44       
-            JNZ _decEnd
+            JNZ _RTS
 
 ;*** Get meteo 2/2 ***
             LDAA VAR_meteoCount2
@@ -929,7 +957,7 @@ _getWDay1   LDAA VAR_bitCache+1
     JSR (KERN_PRINTDEZ)
 #ENDIF 
 
-            JMP _decEnd  
+            JMP _RTS  
         
         
 ;Get/decode month
@@ -956,7 +984,7 @@ _gMon0      JSR getBit
             ;Check for last bit
             LDAA VAR_second
             CMP #49       
-            JNZ _decEnd 
+            JNZ _RTS 
 
 ;*** Get meteo 2/2 ***
             LDAA VAR_meteoCount2
@@ -993,7 +1021,7 @@ _gMon1      SHRA VAR_bitCache+1
     JSR (KERN_PRINTDEZ)
 #ENDIF 
 
-            JMP _decEnd 
+            JMP _RTS 
         
 ;Get/decode year
 ;---------------------------------------------------------
@@ -1018,7 +1046,7 @@ _gYear0     SHRA VAR_bitCache+1
             JSR getBit
             ORAA VAR_bitCache+1
             STAA VAR_bitCache+1
-            JMP _decEnd
+            JMP _RTS
 
 ;Last bit
 ;Check parity for whole date (Day, weekday, month, year)         
@@ -1047,7 +1075,7 @@ _pDateBAD   LDA #00Bh ;Partity n.OK
     JSR (KERN_PRINTSTR)
 #ENDIF
 
-            JMP _decEnd
+            JMP _RTS
             
 _pDat0      PLA ;Bit count = "even"
             JNZ _pDateBAD
@@ -1071,21 +1099,11 @@ _pDateOK    LDAA VAR_bitCache+1
     JSR (KERN_PRINTDEZ)
 #ENDIF 
 
-            JMP _decEnd
+            JMP _RTS
             
             
 ;Decoding end
 ;---------------------------------------------------------
-;Ready for next bit
-_decEnd     STZA VAR_bitCache
-            ;CLC
-            ;JSR (KERN_SPINLOCK) ;Enable the interrupts again
-            RTS
-
-;Interference detected -> continue            
-_decIgnore  DECA VAR_edgeCnt
-            ;CLC
-            ;JSR (KERN_SPINLOCK) ;Enable the interrupts again
 
 ;DEBUG print interference sign
 #IFDEF DEBUG 
@@ -1258,3 +1276,4 @@ _failRTS
             CLA
             SEC
             RTS
+        
