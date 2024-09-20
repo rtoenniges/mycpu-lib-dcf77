@@ -6,7 +6,7 @@
 ;******************************************
 
 #include <sys.hsm>
-#include <library.hsm>
+#include <code.hsm>
 #include <interrupt.hsm>
 #include <time.hsm> 
 #include <mem.hsm> 
@@ -15,6 +15,8 @@
 #DEFINE SYNC_DISP 
 ;Comment this line in if you use the SCC-Rack-Extension
 ;#DEFINE SCC_BOARD 
+;Comment this line in if library should load on higher ROM-Page
+;#DEFINE HIGH_ROM 
 ;Comment this line in if you want debug output
 ;#DEFINE DEBUG
 
@@ -22,24 +24,11 @@
 ;Second[MeteoCount1|MeteoCount2]: BitLevel(PulseTime) {Additional comments}
 ;Example: 28[28|49]: H(6) Minute: 32
 
-
-#IFDEF DEBUG
-#include <conio.hsm> 
-STR_sync            DB "Sync pause detected!",0
-STR_interference    DB "Interference detected!",0
-STR_lost_sync       DB "Synchronization lost!",0
-STR_minute_fail     DB "Minute: Bad Parity!",0
-STR_hour_fail       DB "Hour: Bad Parity!",0
-STR_date_fail       DB "Date: Bad Parity!",0
-STR_meteo           DB "Meteo: ",0
-STR_minute          DB "Minute: ",0
-STR_hour            DB "Hour: ",0
-STR_day             DB "Day: ",0
-STR_weekday         DB "Weekday: ",0
-STR_month           DB "Month: ",0
-STR_year            DB "Year: ",0
-#ENDIF 
-
+ORG 8000h
+ DW 8002h
+ DW initfunc
+ DW termfunc
+ DW codestart
 ;-------------------------------------;
 ; declare variables
 
@@ -115,11 +104,27 @@ VAR_ledsDataOK      DB  0
 
 VAR_timerhandle     DB  0   ;Address of timer interrupt handle
 
+#IFDEF DEBUG
+#include <conio.hsm> 
+STR_sync            DB "Sync pause detected!",0
+STR_interference    DB "Interference detected!",0
+STR_lost_sync       DB "Synchronization lost!",0
+STR_minute_fail     DB "Minute: Bad Parity!",0
+STR_hour_fail       DB "Hour: Bad Parity!",0
+STR_date_fail       DB "Date: Bad Parity!",0
+STR_meteo           DB "Meteo: ",0
+STR_minute          DB "Minute: ",0
+STR_hour            DB "Hour: ",0
+STR_day             DB "Day: ",0
+STR_weekday         DB "Weekday: ",0
+STR_month           DB "Month: ",0
+STR_year            DB "Year: ",0
+#ENDIF 
+
 ;-------------------------------------;
 ; begin of assembly code
 
 codestart
-#include <library.hsm>
 ;--------------------------------------------------------- 
 ;Library handling  
 ;---------------------------------------------------------  
@@ -128,12 +133,25 @@ codestart
 ;Library initialization
 ;---------------------------------------------------------   
 initfunc
-
+            ORA #0
+            JNZ funcdispatch
+            CLC
+            JSR (KERN_ISLOADED)
+            CLA
+            JPC _RTS
+            
 ;Initialize Zeropointer
             FLG ZP_meteoWrite
             FLG ZP_meteoWrite+1
             FLG ZP_meteoRead
             FLG ZP_meteoRead+1
+
+#IFDEF HIGH_ROM
+            ;move this program to a separate memory page
+            LPT  #codestart
+            LDA  #0Eh
+            JSR  (KERN_MULTIPLEX)  ;may fail on older kernel
+#ENDIF
 
             LPT #VAR_meteo1
             SPT ZP_meteoRead
@@ -163,7 +181,7 @@ initfunc
             JSR (KERN_IOCHANGELED)
 #ENDIF   
             CLA
-            RTS
+            JMP (KERN_EXITTSR)
             
 ;Termination function
 ;---------------------------------------------------------                  
@@ -176,8 +194,8 @@ termfunc
             LDA #HDW_INT
             JSR (KERN_IC_DISABLEINT)
             ;Disable spinlock
-            CLC
-            JSR (KERN_SPINLOCK)
+            ;CLC
+            ;JSR (KERN_SPINLOCK)
             ;Disable idle function
             CLC
             LPT #int_idle
@@ -217,6 +235,8 @@ funcdispatch
             JPZ func_getMeteoTime   ;Function 08h
             DEC 
             JPZ func_getEntryPoint  ;Function 09h
+            DEC
+            JPZ func_getROMPage     ;Function 0Ah
             JMP _failRTS
   
        
@@ -303,6 +323,10 @@ func_getEntryPoint
             LPT #funcdispatch
             JMP _RTS
 
+;Function '0Ah' = Get ROM-Page of library
+func_getROMPage
+            LDAA REG_ROMPAGE
+            JMP _RTS
 
 ;--------------------------------------------------------- 
 ;Interrupt routines   
@@ -337,10 +361,10 @@ _rInt0      LDA #1
             STAA FLG_dcfReceiver ;Flank detected -> Set flag (Pause timer count)
             INCA VAR_edgeCnt ;Count edges (For signal error detection)
             LDAA VAR_bitCount
-			STAA VAR_bitCache ;Move bitCounter to cache
-			STZA VAR_bitCount
-			STZA FLG_dcfReceiver ;Resume timer count
-			
+            STAA VAR_bitCache ;Move bitCounter to cache
+            STZA VAR_bitCount
+            STZA FLG_dcfReceiver ;Resume timer count
+            
             ;LDAA VAR_bitCache 
             CMP #PARAM_SYNCPAUSE ;Synchronize with signal -> Detect syncpoint/-gap
             JNC _rInt2
@@ -349,7 +373,7 @@ _rInt0      LDA #1
             STZA FLG_synced
             STZA VAR_second
             STZA VAR_edgeCnt
-			
+            
 #IFDEF DEBUG
     LDA #13 ;\r
     JSR (KERN_PRINTCHAR)
@@ -357,7 +381,7 @@ _rInt0      LDA #1
     JSR (KERN_PRINTSTR)
 #ENDIF
 
-			RTS
+            RTS
 
 ;Time < PARAM_SYNCPAUSE          
 _rInt2      CMP #PARAM_SECOND 
@@ -387,7 +411,7 @@ deSync
 ;New bit -> Ready for decode   
 _rInt4      LDA #1
             STAA FLG_dcfReceiver+1
-            		          
+                              
 ;DEBUG print desynchronisation            
 #IFDEF DEBUG
     LDAA FLG_synced
@@ -502,49 +526,49 @@ _dbg1   JSR (KERN_PRINTCHAR)
             LDAA FLG_synced
             JNZ _RTS
             LDAA VAR_second
-            TAY			
+            TAY            
 _nBit0      LDAA VAR_dataOK
             AND #01h
             JPZ _nBit1
             LDAA VAR_tmpMinutes ;Take over 'minutes'
             STAA VAR_minutes
-			TAX
+            TAX
 _nBit1      LDAA VAR_dataOK
             AND #02h
             JPZ _nBit2
             LDAA VAR_tmpHours ;Take over 'hours'
             STAA VAR_hours
-			;Set system time
-			PHA
+            ;Set system time
+            PHA
             LDAA VAR_dataOK
             AND #03h
-			CMP #03h
-			JNZ _RTS
-			PLA
-			CPY #0
-			JNZ _nBit2 ;Sync every minute at xx:xx:00
+            CMP #03h
+            JNZ _RTS
+            PLA
+            CPY #0
+            JNZ _nBit2 ;Sync every minute at xx:xx:00
             SEC
             JSR (KERN_GETSETTIME)
-			
+            
 _nBit2      LDAA VAR_dataOK
             AND #04h
             JPZ _RTS
             LDAA VAR_tmpYear ;Take over 'year'
             STAA VAR_year
-			TAY
+            TAY
             LDAA VAR_tmpMonth ;Take over 'month'
             STAA VAR_month
-			TAX
+            TAX
             LDAA VAR_tmpWeekday ;Take over 'weekday'
             STAA VAR_weekday
             LDAA VAR_tmpDay ;Take over 'day'
             STAA VAR_day
             ;Set system date
-			PHA
-			LDAA VAR_second
-			CMP #0
-			JNZ _RTS ;Sync every minute at xx:xx:00
-			PLA
+            PHA
+            LDAA VAR_second
+            CMP #0
+            JNZ _RTS ;Sync every minute at xx:xx:00
+            PLA
             SEC
             JSR (KERN_GETSETDATE)
 
@@ -601,7 +625,7 @@ getMeteo
             LDAA VAR_meteoCount1
             CMP #14
             JNC _RTS ;Previous data not complete
-			TAX
+            TAX
             JSR getBitChar
             STA (ZP_meteoWrite),X
             INCA VAR_meteoCount1        
@@ -683,7 +707,7 @@ _gMin0      JSR getBit
 _gMet21     LDAA VAR_meteoCount2
             CMP #49
             JNZ parityMinutes ;Previous meteo data not complete
-			TAX
+            TAX
             LDA #'0'
             STA (ZP_meteoWrite),X
             INCA VAR_meteoCount2
@@ -770,12 +794,12 @@ _gHrs0      JSR getBit
 _gMet31     LDAA VAR_meteoCount2
             CMP #56
             JNZ parityHours ;Previous meteo data not complete
-			TAX
+            TAX
             LDA #'0'
             STA (ZP_meteoWrite),X ; 1. '0'
             INX
             STA (ZP_meteoWrite),X ; 2. '0'
-			INX
+            INX
             STXA VAR_meteoCount2
 
 ;Last bit
@@ -861,7 +885,7 @@ _gDay0      JSR getBit
             LDAA VAR_meteoCount2
             CMP #64
             JNZ _gDay1 ;Previous meteo data not complete
-			TAX
+            TAX
             LDA #'0'
             STA (ZP_meteoWrite),X ; 1. '0'
             INX
