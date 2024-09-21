@@ -193,9 +193,6 @@ termfunc
             ;Disable hardware-interrupt
             LDA #HDW_INT
             JSR (KERN_IC_DISABLEINT)
-            ;Disable spinlock
-            ;CLC
-            ;JSR (KERN_SPINLOCK)
             ;Disable idle function
             CLC
             LPT #int_idle
@@ -308,7 +305,7 @@ func_getYear
             JPZ _failRTS
             JMP _RTS
             
-;Function '08h' = Get encoded METEO Information (X/Y = Pointer to string), Carry = 0 if successfull
+;Function '08h' = Get encoded METEO Information (X/Y = Pointer to zero terminated string), Carry = 0 if successfull
 ;Bit 0-41 = meteotime (3 minutes)
 ;Bit 42-81 = time information (Minutes + Hours + Day + Month + Weekday + Year) without parity
 func_getMeteoTime
@@ -451,11 +448,7 @@ int_idle
             STZA FLG_dcfReceiver+1 ;Get ready for new bit immediately
 ;--------------------------------------------------------- 
 ;DCF77 decoding   
-;---------------------------------------------------------
-
-;From this point no interrupt should break the programm
-            ;SEC
-            ;JSR (KERN_SPINLOCK) ;"You shall not pass"                       
+;---------------------------------------------------------                     
 
 ;New bit received
 ;---------------------------------------------------------
@@ -468,8 +461,8 @@ int_idle
         JSR sccBoard
 #ENDIF  
 
-            LDAA FLG_synced
-            JNZ _RTS
+        LDAA FLG_synced
+        JNZ _RTS
 
 ;DEBUG print time measurement and bit information
 #IFDEF DEBUG
@@ -527,7 +520,7 @@ _dbg1   JSR (KERN_PRINTCHAR)
             JNZ _RTS
             LDAA VAR_second
             TAY            
-_nBit0      LDAA VAR_dataOK
+            LDAA VAR_dataOK
             AND #01h
             JPZ _nBit1
             LDAA VAR_tmpMinutes ;Take over 'minutes'
