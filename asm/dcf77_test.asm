@@ -9,6 +9,7 @@
 ;*Parameter:
 ;*Nothing = Set system clock with DCF77 - Data
 ;*Number 1-7 = Display data set 1-7 from the library
+;*Number 8 = Print Meteo String
 ;*Number 99 = Display current time and date
 ;*
 ;*
@@ -21,11 +22,13 @@
 #include <conio.hsm> 
 #include <time.hsm> 
 #include <code.hsm> 
+#include <mem.hsm> 
+#include <sys.hsm>
 
 ;Declare variables
 DCF77LIB        EQU 60h
 
-ZP_paramPtr     EQU 10h
+VAR_paramPtr     DW 0
 
 STR_done        DB "System clock successfully set!",0
 STR_fault       DB "Receiver not synchronized or data incomplete!",0
@@ -37,6 +40,9 @@ VAR_day         DB 0
 VAR_month       DB 0
 VAR_year        DB 0
 
+VAR_dcfRAMPg    DB 0
+VAR_timeStruct  DW 0
+VAR_meteoPTR    DW 0
 
 ;--------------------------------------------------------- 
 ;Main program  
@@ -44,50 +50,64 @@ VAR_year        DB 0
 codestart
 
 main    
-        FLG ZP_paramPtr ;Initialize zeropointer
 
 ;Get parameter from console
-skipPar LPA
-        JPZ setSysTime	;No parameter -> set system clock
-        CMP #20h ;Search for "space" -> ' '
-        JNZ skipPar
+skipPar     LPA
+            JPZ setSysTime	;No parameter -> set system clock
+            CMP #20h ;Search for "space" -> ' '
+            JNZ skipPar
 
-_skp0   SPT ZP_paramPtr
-        LPA
-        JPZ setSysTime  ;No parameter -> set system clock
-        CMP #20h
-        JPZ _skp0
-        
-        LPT ZP_paramPtr
-        JSR (KERN_STRING2NUMBER)
-        CMP #99
-        JPZ printTime   ;Parameter '99' -> print date/time
-		CMP #8
-		PHA
-		JPZ getMet
+_skp0       SPTA VAR_paramPtr
+            LPA
+            JPZ setSysTime ;No parameter -> set system clock
+            CMP #20h ;Search for "space" -> ' '
+            JPZ _skp0
+
+            LPTA VAR_paramPtr
+            JSR (KERN_STRING2NUMBER)
+            CMP #99
+            JPZ printTime   ;Parameter '99' -> print date/time
+		    CMP #8
+		    JPC getMeteo
+		    PHA
 
 ;Parameter 0-7 -> Print data from library        
-        LDA #DCF77LIB
-        JSR  (KERN_LIBSELECT)        
-        PLA
-        JSR (KERN_LIBCALL)
-        JPC printFault
-        CLX
-        CLY
-        JSR (KERN_PRINTDEZ)
-        CLA
-        RTS
+            LDA #DCF77LIB
+            JSR  (KERN_LIBSELECT)
+            JNC _getPar0        
+            PLA ;Dummy
+			JMP printFault
+_getPar0    PLA
+            JSR (KERN_LIBCALL)
+            JPC printFault
+            CLX
+            CLY
+            JSR (KERN_PRINTDEZ)
+            CLA
+            RTS
 
 ;Parameter 8 -> Print meteo data from library 
-getMet  LDA #DCF77LIB
-        JSR (KERN_LIBSELECT)        
-        PLA
-        JSR (KERN_LIBCALL)
-        JPC printFault
-        JSR (KERN_PRINTSTR)
-        CLA
-        RTS  
+getMeteo 
+            LDA #DCF77LIB
+            JSR (KERN_LIBSELECT)
+		    JPC printFault
 
+;Switch to ROM-Page of DCF77-Lib    
+            LDA #0Ah
+            JSR (KERN_LIBCALL)
+            JPC _swROM0 ;Old Lib-Version do not have this function -> Skip
+            LPT #codestart
+            JSR (KERN_PRGMOVE)
+		
+_swROM0     LDA #08h
+		    JSR (KERN_LIBCALL)
+            JPC printFault
+		    CLA
+		    JSR (KERN_PRINTSTR)       
+
+            RTS  
+
+;Parameter 99 -> Print date and time
 setSysTime
         LDA #DCF77LIB
         JSR  (KERN_LIBSELECT) 
