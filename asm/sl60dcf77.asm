@@ -5,6 +5,7 @@
 ;***** by Robin Tönniges (2016-2024) ******
 ;******************************************
 
+#include <conio.hsm> 
 #include <sys.hsm>
 #include <code.hsm>
 #include <interrupt.hsm>
@@ -14,9 +15,9 @@
 ;Comment this line out if you dont want synced status on Multi-I/O-LEDs
 #DEFINE SYNC_DISP 
 ;Comment this line in if you use the SCC-Rack-Extension
-;#DEFINE SCC_BOARD 
+#DEFINE SCC_BOARD 
 ;Comment this line in if library should load on higher ROM-Page
-;#DEFINE HIGH_ROM 
+#DEFINE HIGH_ROM 
 ;Comment this line in if you want debug output
 ;#DEFINE DEBUG
 
@@ -89,8 +90,8 @@ VAR_meteo2          DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
                     DB  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0
                     DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
                     
-ZP_meteoWrite       EQU 20h ;Write pointer for meteo data
-ZP_meteoRead        EQU 22h ;Read pointer for meteo data
+ZP_meteoWrite       EQU 10h ;Write pointer for meteo data
+ZP_meteoRead        EQU 12h ;Read pointer for meteo data
 VAR_meteoCount1     DB  0 ;Weather bit counter (0-41)
 VAR_meteoCount2     DB  0 ;Time bit counter (42-81)
 
@@ -103,9 +104,9 @@ VAR_tmpYear         DB  0
 VAR_ledsDataOK      DB  0
 
 VAR_timerhandle     DB  0   ;Address of timer interrupt handle
+VAR_RAMPAGE         DB  0
 
 #IFDEF DEBUG
-#include <conio.hsm> 
 STR_sync            DB "Sync pause detected!",0
 STR_interference    DB "Interference detected!",0
 STR_lost_sync       DB "Synchronization lost!",0
@@ -234,6 +235,8 @@ funcdispatch
             JPZ func_getEntryPoint  ;Function 09h
             DEC
             JPZ func_getROMPage     ;Function 0Ah
+            DEC
+            JPZ func_getRAMPage     ;Function 0Bh
             JMP _failRTS
   
        
@@ -323,6 +326,11 @@ func_getEntryPoint
 ;Function '0Ah' = Get ROM-Page of library
 func_getROMPage
             LDAA REG_ROMPAGE
+            JMP _RTS
+
+;Function '0Bh' = Get RAM-Page of library
+func_getRAMPage
+            LDAA REG_RAMPAGE
             JMP _RTS
 
 ;--------------------------------------------------------- 
