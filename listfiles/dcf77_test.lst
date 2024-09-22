@@ -1,0 +1,397 @@
+                ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                ;~~  [MyCA] Macro Cross Assembler V1.10 for MyCPU, (c) 2023 by Dennis Kuschel  ~~
+                ;~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+                ;[File: dcf77_test.asm]
+                ;[ASCII]
+                ;******************************************
+                ;****  DCF77 Library - Test program *******
+                ;******************************************
+                ;****  by Robin Tönniges (2016-2024)  *****
+                ;******************************************
+                
+                ;***********************************************
+                ;*Parameter:
+                ;*Nothing = Set system clock with DCF77 - Data
+                ;*Number 1-7 = Display data set 1-7 from the library
+                ;*Number 8 = Print Meteo String
+                ;*Number 99 = Display current time and date
+                ;*
+                ;*
+                ;*
+                ;***********************************************
+                
+                ;Include
+                ;[File: C:\Program Files (x86)\myca\include\program.hsm]
+                ;[ASCII]
+                
+                ORG 8000h
+    8000 0280    DW 8002h
+    8002 6280    DW main
+    8004 0000    DW 0
+    8006 6280    DW codestart
+                
+                ;[File: dcf77_test.asm]
+                ;[File: C:\Program Files (x86)\myca\include\ctype.hsm]
+                ;[ASCII]
+                
+                KERN_ISPRINTABLE    EQU 024Eh
+                KERN_ISCTRLCHAR     EQU 0250h
+                KERN_ISALPHA        EQU 0252h
+                KERN_ISDIGIT        EQU 0254h
+                KERN_ASCIIPETSCII   EQU 0256h
+                KERN_STRING2NUMBER  EQU 0262h
+                
+                ;[File: dcf77_test.asm]
+                ;[File: C:\Program Files (x86)\myca\include\conio.hsm]
+                ;[ASCII]
+                
+                ;-- functions --
+                KERN_KBHIT          EQU 023Ah
+                KERN_GETCH          EQU 023Ch
+                KERN_UNGETCH        EQU 023Eh
+                KERN_TESTCTRLC      EQU 0240h
+                KERN_PRINTCHAR      EQU 0242h
+                KERN_PRINTSTR       EQU 0244h
+                KERN_PRINTSTRR      EQU 0246h
+                KERN_GETCRSRPOS     EQU 0248h
+                KERN_GETSCREENSIZE  EQU 024Ah
+                KERN_GETFREELINES   EQU 024Ch
+                KERN_INPUT          EQU 0258h
+                KERN_PRINTHEX       EQU 025Eh
+                KERN_PRINTDEZ       EQU 0260h
+                KERN_SETCONSOLE     EQU 022Ch
+                KERN_GSTERMINAL     EQU 02A0h
+                KERN_QUOTEMODE      EQU 02E6h
+                KERN_GSSTDOUTVECT   EQU 02D4h
+                KERN_SETINPSPVECT   EQU 025Ah
+                KERN_SETINPUTMODE   EQU 025Ch
+                
+                ;-- flag definitions --
+                CON_DISP_LCD        SET 01h
+                CON_DISP_SCREEN     SET 02h
+                CON_DISP_TTY        SET 03h
+                CON_DISP_TTYSCR     SET 04h
+                CON_DISP_NONE       SET 0Fh
+                CON_KEYB_KEYB       SET 10h
+                CON_KEYB_TTY        SET 20h
+                CON_KEYB_NONE       SET 0F0h
+                INPMODE_BASIC       SET 0
+                INPMODE_BASICRUN    SET 1
+                INPMODE_KERNALSHELL SET 2
+                INPUTFLAG_HISTORY   SET 01h
+                INPUTFLAG_SIZE      SET 02h
+                INPUTFLAG_QUOTE     SET 04h
+                INPUTFLAG_LINE80    SET 08h
+                INPUTFLAG_TABKEY    SET 10h
+                INPUTFLAG_NOBORDER  SET 20h
+                
+                ;[File: dcf77_test.asm]
+                ;[File: C:\Program Files (x86)\myca\include\time.hsm]
+                ;[ASCII]
+                
+                KERN_GETSETTIME     EQU 029Ah
+                KERN_GETSETDATE     EQU 029Ch
+                
+                KERN_INSDELTIMER    EQU 02AAh
+                
+                ;[File: dcf77_test.asm]
+                ;[File: C:\Program Files (x86)\myca\include\code.hsm]
+                ;[ASCII]
+                
+                KERN_ADAPTOPCODES   EQU 02C4h
+                KERN_EXECUTEFILE    EQU 02BEh
+                KERN_EXITTSR        EQU 02C2h
+                KERN_KILLPROGRAM    EQU 02C0h
+                KERN_KILLPROGEX     EQU 0328h
+                KERN_SPECROMCALL    EQU 02B6h
+                KERN_CALLFROMROM    EQU 02B8h
+                KERN_CALLROM        EQU 02BAh
+                KERN_LIBCALL        EQU 02CAh
+                KERN_LIBSELECT      EQU 02CCh
+                KERN_LIBDESELECT    EQU 02CEh
+                KERN_LIBUNLOAD      EQU 02D0h
+                KERN_ISLOADED       EQU 02D2h
+                KERN_ASSERT         EQU 0326h
+                
+                REG_ROMPAGE  SET 3900h
+                
+                ;[File: dcf77_test.asm]
+                ;[File: C:\Program Files (x86)\myca\include\mem.hsm]
+                ;[ASCII]
+                
+                KERN_MALLOCFREE     EQU 02C8h
+                KERN_ALLOCFREERAMP  EQU 02ACh
+                KERN_ALLOCDBUF      EQU 031Ah
+                KERN_FREEDBUF       EQU 031Ch
+                KERN_ALLOCFREEZSP   EQU 02F4h
+                
+                REG_RAMPAGE         SET 3800h
+                ADR_RAMPAGE_START   SET 4000h
+                
+                ;[File: dcf77_test.asm]
+                ;[File: C:\Program Files (x86)\myca\include\sys.hsm]
+                ;[ASCII]
+                
+                KERN_WARMSTART      EQU 0220h
+                KERN_FILEINPUT      EQU 027Ah
+                KERN_GETINFO        EQU 02A2h
+                KERN_REGFILEDEVICE  EQU 0264h
+                KERN_FSREGISTER     EQU 02AEh
+                KERN_FSUNREGISTER   EQU 02B0h
+                KERN_GETCHECKSUM16  EQU 02B2h
+                KERN_SETMEMBORDERS  EQU 029Eh
+                KERN_SETIDLEFUNC    EQU 02EAh
+                KERN_IDLE           EQU 02ECh
+                KERN_TESTVERSION    EQU 030Ch
+                KERN_CONFIGBYTE     EQU 030Ah
+                KERN_IDEDRIVER      EQU 030Eh
+                KERN_MULTIPLEX      EQU 0312h
+                KERN_PRGMOVE        EQU 032Ah
+                
+                ;[File: dcf77_test.asm]
+                ;Declare variables
+                DCF77LIB        EQU 60h
+                
+    8008 0000   VAR_paramPtr     DW 0
+                
+    800A D35953 STR_done        DB "System clock successfully set!",0
+    800D 54454D 
+    8010 20434C 
+    8013 4F434B 
+    8016 205355 
+    8019 434345 
+    801C 535346 
+    801F 554C4C 
+    8022 592053 
+    8025 455421 
+    8028 00     
+    8029 D24543 STR_fault       DB "Receiver not synchronized or data incomplete!",0
+    802C 454956 
+    802F 455220 
+    8032 4E4F54 
+    8035 205359 
+    8038 4E4348 
+    803B 524F4E 
+    803E 495A45 
+    8041 44204F 
+    8044 522044 
+    8047 415441 
+    804A 20494E 
+    804D 434F4D 
+    8050 504C45 
+    8053 544521 
+    8056 00     
+                
+    8057 00     VAR_seconds     DB 0
+    8058 00     VAR_minutes     DB 0
+    8059 00     VAR_hours       DB 0
+    805A 00     VAR_day         DB 0
+    805B 00     VAR_month       DB 0
+    805C 00     VAR_year        DB 0
+                
+    805D 00     VAR_dcfRAMPg    DB 0
+    805E 0000   VAR_timeStruct  DW 0
+    8060 0000   VAR_meteoPTR    DW 0
+                
+                ;--------------------------------------------------------- 
+                ;Main program  
+                ;---------------------------------------------------------
+                codestart
+                
+                main    
+                
+                ;Get parameter from console
+    8062 EA     skipPar     LPA
+    8063 19C580             JPZ setSysTime	;No parameter -> set system clock
+    8066 7020               CMP #20h ;Search for "space" -> ' '
+    8068 186280             JNZ skipPar
+                
+    806B 6E0880 _skp0       SPTA VAR_paramPtr
+    806E EA                 LPA
+    806F 19C580             JPZ setSysTime ;No parameter -> set system clock
+    8072 7020               CMP #20h ;Search for "space" -> ' '
+    8074 196B80             JPZ _skp0
+                
+    8077 6D0880             LPTA VAR_paramPtr
+    807A 1B6202             JSR (KERN_STRING2NUMBER)
+    807D 7063               CMP #99
+    807F 192E81             JPZ printTime   ;Parameter '99' -> print date/time
+    8082 7008   		    CMP #8
+    8084 17A280 		    JPC getMeteo
+    8087 08     		    PHA
+                
+                ;Parameter 0-7 -> Print data from library        
+    8088 3060               LDA #DCF77LIB
+    808A 1BCC02             JSR  (KERN_LIBSELECT)
+    808D 169480             JNC _getPar0        
+    8090 0C                 PLA ;Dummy
+    8091 10BB81 			JMP printFault
+    8094 0C     _getPar0    PLA
+    8095 1BCA02             JSR (KERN_LIBCALL)
+    8098 17BB81             JPC printFault
+    809B 2D                 CLX
+    809C 2E                 CLY
+    809D 1B6002             JSR (KERN_PRINTDEZ)
+    80A0 2C                 CLA
+    80A1 1F                 RTS
+                
+                ;Parameter 8 -> Print meteo data from library 
+                getMeteo 
+    80A2 3060               LDA #DCF77LIB
+    80A4 1BCC02             JSR (KERN_LIBSELECT)
+    80A7 17BB81 		    JPC printFault
+                
+                ;Switch to ROM-Page of DCF77-Lib    
+    80AA 300A               LDA #0Ah
+    80AC 1BCA02             JSR (KERN_LIBCALL)
+    80AF 17B880             JPC _swROM0 ;Old Lib-Version do not have this function -> Skip
+    80B2 6C6280             LPT #codestart
+    80B5 1B2A03             JSR (KERN_PRGMOVE)
+                
+    80B8 3008   _swROM0     LDA #08h
+    80BA 1BCA02 		    JSR (KERN_LIBCALL)
+    80BD 17BB81             JPC printFault
+    80C0 2C     		    CLA
+    80C1 1B4402 		    JSR (KERN_PRINTSTR)       
+                
+    80C4 1F                 RTS  
+                
+                ;Parameter 99 -> Print date and time
+                setSysTime
+    80C5 3060           LDA #DCF77LIB
+    80C7 1BCC02         JSR  (KERN_LIBSELECT) 
+    80CA 3001           LDA #1 ;Seconds
+    80CC 1BCA02         JSR (KERN_LIBCALL)
+    80CF 17BB81         JPC printFault
+    80D2 425780         STAA VAR_seconds
+    80D5 3002           LDA #2 ;Minutes
+    80D7 1BCA02         JSR (KERN_LIBCALL)
+    80DA 17BB81         JPC printFault
+    80DD 425880         STAA VAR_minutes
+    80E0 3003           LDA #3 ;Hours
+    80E2 1BCA02         JSR (KERN_LIBCALL)
+    80E5 17BB81         JPC printFault
+    80E8 425980         STAA VAR_hours
+    80EB 3004           LDA #4 ;Day
+    80ED 1BCA02         JSR (KERN_LIBCALL)
+    80F0 17BB81         JPC printFault
+    80F3 425A80         STAA VAR_day
+    80F6 3006           LDA #6 ;Month
+    80F8 1BCA02         JSR (KERN_LIBCALL)
+    80FB 17BB81         JPC printFault
+    80FE 425B80         STAA VAR_month
+    8101 3007           LDA #7 ;Year
+    8103 1BCA02         JSR (KERN_LIBCALL)
+    8106 17BB81         JPC printFault
+    8109 425C80         STAA VAR_year
+                
+                        ;Set system clock
+    810C 325980         LDAA VAR_hours
+    810F 525880         LDXA VAR_minutes
+    8112 595780         LDYA VAR_seconds
+    8115 05             SEC
+    8116 1B9A02         JSR (KERN_GETSETTIME)
+                
+    8119 325A80         LDAA VAR_day
+    811C 525B80         LDXA VAR_month
+    811F 595C80         LDYA VAR_year
+    8122 05             SEC
+    8123 1B9C02         JSR (KERN_GETSETDATE)
+                
+    8126 6C0A80         LPT #STR_done
+    8129 1B4402         JSR (KERN_PRINTSTR)
+    812C 2C             CLA
+    812D 1F             RTS
+                
+                printTime
+    812E 3060           LDA #DCF77LIB
+    8130 1BCC02         JSR  (KERN_LIBSELECT) 
+    8133 3003           LDA #3 ;Hours
+    8135 1BCA02         JSR (KERN_LIBCALL)
+    8138 17BB81         JPC printFault
+    813B 1AAB81         JSR leadingZero
+    813E 2D             CLX
+    813F 2E             CLY
+    8140 1B6002         JSR (KERN_PRINTDEZ)
+    8143 303A           LDA #':'
+    8145 1B4202         JSR (KERN_PRINTCHAR)
+    8148 3002           LDA #2 ;Minutes
+    814A 1BCA02         JSR (KERN_LIBCALL)
+    814D 17BB81         JPC printFault
+    8150 1AAB81         JSR leadingZero
+    8153 2D             CLX
+    8154 2E             CLY
+    8155 1B6002         JSR (KERN_PRINTDEZ)
+    8158 303A           LDA #':'
+    815A 1B4202         JSR (KERN_PRINTCHAR)
+    815D 3001           LDA #1 ;Seconds
+    815F 1BCA02         JSR (KERN_LIBCALL)
+    8162 17BB81         JPC printFault
+    8165 1AAB81         JSR leadingZero
+    8168 2D             CLX
+    8169 2E             CLY
+    816A 1B6002         JSR (KERN_PRINTDEZ)
+    816D 300D           LDA #13 ;\r
+    816F 1B4202         JSR (KERN_PRINTCHAR)
+    8172 3004           LDA #4 ;Day
+    8174 1BCA02         JSR (KERN_LIBCALL)
+    8177 17BB81         JPC printFault
+    817A 1AAB81         JSR leadingZero
+    817D 2D             CLX
+    817E 2E             CLY
+    817F 1B6002         JSR (KERN_PRINTDEZ)
+    8182 302E           LDA #'.'
+    8184 1B4202         JSR (KERN_PRINTCHAR)
+    8187 3006           LDA #6 ;Month
+    8189 1BCA02         JSR (KERN_LIBCALL)
+    818C 17BB81         JPC printFault
+    818F 1AAB81         JSR leadingZero
+    8192 2D             CLX
+    8193 2E             CLY
+    8194 1B6002         JSR (KERN_PRINTDEZ)
+    8197 302E           LDA #'.'
+    8199 1B4202         JSR (KERN_PRINTCHAR)
+    819C 3007           LDA #7 ;Year
+    819E 1BCA02         JSR (KERN_LIBCALL)
+    81A1 17BB81         JPC printFault
+    81A4 2D             CLX
+    81A5 2E             CLY
+    81A6 1B6002         JSR (KERN_PRINTDEZ)
+    81A9 2C             CLA
+    81AA 1F             RTS
+                
+                ;--------------------------------------------------------- 
+                ;Helper functions   
+                ;---------------------------------------------------------
+                
+                ;Print leading zero for date and time <10
+                leadingZero
+    81AB 08             PHA
+    81AC 04             CLC
+    81AD 9009           SBC #9
+    81AF 17B981         JPC lz_0 
+    81B2 3030           LDA #'0'
+    81B4 1B4202         JSR (KERN_PRINTCHAR)
+    81B7 0C             PLA ;<10
+    81B8 1F             RTS
+    81B9 0C     lz_0    PLA ;>9
+    81BA 1F             RTS
+                
+                printFault
+    81BB 6C2980         LPT #STR_fault
+    81BE 1B4402         JSR (KERN_PRINTSTR)
+                
+    81C1 2C     _RTS    CLA
+    81C2 1F             RTS
+                
+
+
+Segment Table:
+**************
+Segment Name                 Startaddr  Endaddr     Size  Type
+=========================================================================
+default                           8000     81C2      1C3  CODE  fixed
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+No errors found.
