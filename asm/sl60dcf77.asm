@@ -11,6 +11,7 @@
 #include <interrupt.hsm>
 #include <time.hsm> 
 #include <mem.hsm> 
+#include <registers.hsm>
 
 ;Comment this line out if you dont want synced status on Multi-I/O-LEDs
 #DEFINE SYNC_DISP 
@@ -58,27 +59,34 @@ PARAM_IGNORE        SET 2       ;Edge time < PARAM_IGNORE       = Signal interfe
 FLG_firstStart      DB  1   ;This flag indicates first start of library -> Ignore first edge
 FLG_dcfReceiver     DW  0   ;This flag is set to 1 if new input (rising edge) comes from the DCF77-Receiver
                             ;FLG_dcfReceiver+1 is set to 1 if bit is ready for decoding
-FLG_synced          DB  1   ;Sync flag -> 0 if synchron with dcf77
 VAR_bitCount        DB  0   ;Timer Interrupt Counter
 VAR_bitCache        DW  0   ;Byte 0 = time value, Byte 1 = temp value
 VAR_edgeCnt         DB  0   ;Edge counter
-VAR_dataOK          DB  0   ;Parity check -> Bit 1 = Minutes OK, Bit 2 = Hours OK, Bit 3 = Date OK, Bit 4 = Meteo OK
-
-;VAR_pSecond         DB  0   ;Pseudo second to bridge desynchronization
-VAR_second          DB  0   ;DCF77-Second/Bit counter
-
-;Time variables initialized with FFh to "lock" Get-functions until 2nd synchronization point reached
-VAR_minutes         DB  0FFh
-VAR_hours           DB  0FFh
-
-VAR_day             DB  0FFh
-VAR_weekday         DB  0FFh
-VAR_month           DB  0FFh
-VAR_year            DB  0FFh
 
 VAR_dateParity      DB  0
 
-;2x 82 Bit + 0 (Little endian)
+;VAR_pSecond         DB  0   ;Pseudo second to bridge desynchronization
+
+;Time variables initialized with FFh to "lock" Get-functions until 2nd synchronization point reached
+START_DATA_STRUCT
+FLG_synced          DB  1   ;00h | Sync flag -> 0 if synchron with dcf77
+VAR_dataOK          DB  0   ;01h | Parity check -> Bit 1 = Minutes OK, Bit 2 = Hours OK, Bit 3 = Date OK, Bit 4 = Meteo OK
+VAR_bitData         DB  0   ;02h | Bit data '0->00h' or '1->80h' of current second
+
+VAR_second          DB  0FFh ;03h | DCF77-Second/Bit counter
+VAR_minutes         DB  0FFh ;04h
+VAR_hours           DB  0FFh ;05h
+
+VAR_day             DB  0FFh ;06h
+VAR_weekday         DB  0FFh ;07h
+VAR_month           DB  0FFh ;08h
+VAR_year            DB  0FFh ;09h                          
+END_DATA_STRUCT ; + Meteo data -> 0Ah - 5Dh 
+
+PAR_DATA_SIZE       EQU END_DATA_STRUCT - START_DATA_STRUCT + 83
+
+
+;2x 82 Bit + 0
 VAR_meteo1          DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ;Weather bits n
                     DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ;Weather bits n+1
                         ;******* Minute *******|********* Hour *********|********* Day **********|**** Month ****|*** WD **|******** Year *********|
@@ -92,6 +100,7 @@ VAR_meteo2          DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
                     
 ZP_meteoWrite       EQU 10h ;Write pointer for meteo data
 ZP_meteoRead        EQU 12h ;Read pointer for meteo data
+ZP_dataStructPTR    EQU 14h ;Pointer for Data struct
 VAR_meteoCount1     DB  0 ;Weather bit counter (0-41)
 VAR_meteoCount2     DB  0 ;Time bit counter (42-81)
 
@@ -104,7 +113,17 @@ VAR_tmpYear         DB  0
 VAR_ledsDataOK      DB  0
 
 VAR_timerhandle     DB  0   ;Address of timer interrupt handle
-VAR_RAMPAGE         DB  0
+
+PAR_HDLMax          SET 6 ;Maximum number of App-Handler
+VAR_tabHANDLER      DS  2*PAR_HDLMax  ;Address register for handlers
+VAR_tabHDLROMPAGE   DS  PAR_HDLMax ;ROM-Pages from registered handlers
+
+VAR_HDLCount        DB  0 ;Number of registered handlers
+VAR_HDLbitmask      DB  0,0,0,0,0,0 ;Bitmask of enabled handlers
+VAR_HDLPTR          DB  0 ;Current active handler
+VAR_TEMP_ROMPAGE    DS  1 ;ROMPAGE from application
+VAR_TEMP            DS  2 ;Temporary application handler address
+VAR_TEMP2           DS  5 ;Temporary stack variable
 
 #IFDEF DEBUG
 STR_sync            DB "Sync pause detected!",0
@@ -146,18 +165,27 @@ initfunc
             FLG ZP_meteoWrite+1
             FLG ZP_meteoRead
             FLG ZP_meteoRead+1
+            FLG ZP_dataStructPTR
+            FLG ZP_dataStructPTR+1
 
 #IFDEF HIGH_ROM
-            ;move this program to a separate memory page
+;Move this program to a separate memory page
             LPT  #codestart
             LDA  #0Eh
             JSR  (KERN_MULTIPLEX)  ;may fail on older kernel
 #ENDIF
 
+;Initialize Meteo-Data Read/Write pointer
             LPT #VAR_meteo1
             SPT ZP_meteoRead
             LPT #VAR_meteo2
             SPT ZP_meteoWrite
+            
+;Allocate RAM for Data-Struct            
+            LPT #PAR_DATA_SIZE
+            SEC
+            JSR (KERN_MALLOCFREE)
+            SPT ZP_dataStructPTR
 
 ;Enable hardware interrupt (IRQ7)
             LDA #HDW_INT
@@ -198,6 +226,10 @@ termfunc
             CLC
             LPT #int_idle
             JSR (KERN_SETIDLEFUNC)
+            ;Free allocated RAM
+            CLC
+            LPT ZP_dataStructPTR
+            JSR (KERN_MALLOCFREE)
 
 #IFDEF SYNC_DISP
             ;Set LEDs to default
@@ -236,7 +268,9 @@ funcdispatch
             DEC
             JPZ func_getROMPage     ;Function 0Ah
             DEC
-            JPZ func_getRAMPage     ;Function 0Bh
+            JPZ func_getDataStruct  ;Function 0Bh
+            DEC
+            JPZ func_setHandler     ;Function 0Ch
             JMP _failRTS
   
        
@@ -328,9 +362,84 @@ func_getROMPage
             LDAA REG_ROMPAGE
             JMP _RTS
 
-;Function '0Bh' = Get RAM-Page of library
-func_getRAMPage
-            LDAA REG_RAMPAGE
+;Function '0Bh' = Get data struct
+;X/Y = Pointer to struct in RAM, Accu = RAMPAGE
+;   Byte 0 = Sync flag -> 0 if synchron with dcf77
+;   Byte 1 = Parity check -> Bit 1 = Minutes OK, Bit 2 = Hours OK, Bit 3 = Date OK, Bit 4 = Meteo OK
+;   Byte 2 = Bit data 0 or 1 for current second
+;   Byte 3 = Second
+;   Byte 4 = Minute
+;   Byte 5 = Hour
+;   Byte 6 = Day
+;   Byte 7 = Weekday
+;   Byte 8 = Month
+;   Byte 9 = Year
+;   Byte 10 - 92 = Meteo data (Zero terminated bit string)
+func_getDataStruct
+            LPT ZP_dataStructPTR
+            SAY
+            SEC
+            SBC #ROMPAGE_RAM0
+            SAY
+			LDAA REG_ROMPAGE
+			INC
+            JMP _RTS
+
+;Function '0Ch' = Set/Delete event handler (Triggered after every new bit)
+;C(1) = Set new handler -> X/Y = Handler-Address, ROMPAGE in stack
+;C(0) = Delete handler -> Handler-No. in X-Reg
+;Return Carry = 0 if successfull
+func_setHandler
+            JNC _clrHDL0
+            SPTA VAR_TEMP
+			
+            ;Save and restore Stack + Get ROMPAGE from Stack            
+            PLR
+            SPTA VAR_TEMP2
+            STAA VAR_TEMP2+2
+            PLR
+            SPTA VAR_TEMP2+3
+            STAA VAR_TEMP_ROMPAGE
+            LPTA VAR_TEMP2+3
+            PHX
+            PHY
+            LDAA VAR_TEMP2+2
+            LPTA VAR_TEMP2
+            PHR
+    
+;Set new handler
+            LPTA VAR_TEMP
+            TXA
+            CLX
+            PHA
+_setHDL1    LDA VAR_HDLbitmask,X
+            JPZ _setHDL0
+            INX
+            CPX #PAR_HDLMax
+            JNC _setHDL1 
+            PLA ;Dummy
+            JMP _failRTS ;No free handler
+           
+_setHDL0    TXA
+            PLX ;Accu = Handl. Nr., X = Low-Address, Y = High-Address
+            PHA
+            SHL ;Double handler number (2 Bytes per handler)
+            SAX
+            STA  VAR_tabHANDLER,X
+            STY  VAR_tabHANDLER+1,X
+            PLX
+            ;LDAA REG_ROMPAGE
+            LDAA VAR_TEMP_ROMPAGE
+            STA  VAR_tabHDLROMPAGE,X
+            LDA #1
+            STA  VAR_HDLbitmask,X
+            INCA VAR_HDLCount
+            TXA
+            JMP _RTS
+;Delete handler            
+_clrHDL0    CLA
+            STA VAR_HDLbitmask, X
+            DECA VAR_HDLCount ;Delete handler           
             JMP _RTS
 
 ;--------------------------------------------------------- 
@@ -386,12 +495,16 @@ _rInt0      LDA #1
     JSR (KERN_PRINTSTR)
 #ENDIF
 
-            RTS
+            JMP _rInt5
 
 ;Time < PARAM_SYNCPAUSE          
 _rInt2      CMP #PARAM_SECOND 
             JNC _rInt3
             INCA VAR_second ;Time >= PARAM_SECOND -> Next second
+            
+_rInt5      LDX #3
+            LDAA VAR_second
+            STA (ZP_dataStructPTR),X ;Add second to struct in RAM
             RTS
 
 ;Time < PARAM_SECOND -> New bit
@@ -449,15 +562,26 @@ int_timer
 
 
 ;BEGIN - Idle function (Bit decoding)
-;>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> 
+;>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+;--------------------------------------------------------- 
+;DCF77 decoding   
+;---------------------------------------------------------   
 int_idle
+
+;New bit available?
             LDAA FLG_dcfReceiver+1
             JPZ _RTS
             STZA FLG_dcfReceiver+1 ;Get ready for new bit immediately
-;--------------------------------------------------------- 
-;DCF77 decoding   
-;---------------------------------------------------------                     
 
+;Add data to struct in RAM
+            LDX #00h ;FLG_synced
+            LDA START_DATA_STRUCT,X
+            STA (ZP_dataStructPTR),X
+            
+            LDX #01h ;VAR_dataOK
+            LDA START_DATA_STRUCT,X
+            STA (ZP_dataStructPTR),X
+                   
 ;New bit received
 ;---------------------------------------------------------
 ;Display synced status on I/O-Module LEDs
@@ -469,8 +593,49 @@ int_idle
         JSR sccBoard
 #ENDIF  
 
-        LDAA FLG_synced
-        JNZ _RTS
+;Get bit information
+            JSR getBit
+            STAA VAR_bitData
+            
+;Add data to struct in RAM
+            JPZ _tFill3
+            LDA #1
+_tFill3     LDX #02h ;VAR_bitData
+            STA (ZP_dataStructPTR),X
+            
+            
+;Start application handler chain
+            LDAA VAR_HDLCount
+            JPZ _nBit0 ;No handler registered
+
+            CLX
+_hdl0       LDA VAR_HDLbitmask,X
+            JNZ _hdl1
+_hdl2       INX
+            CPX #PAR_HDLMax
+            JPC _nBit0 ;End of handler chain -> Start decoding
+            JMP _hdl0
+            
+_hdl1       TXA
+            STAA VAR_HDLPTR ;Current active handler No.
+            SHL
+            TAX
+
+;call handler-routines in ROM
+            LDYA VAR_HDLPTR
+            LDA VAR_tabHDLROMPAGE,Y
+            PHA
+            LDA VAR_tabHANDLER+1,X
+            PHA
+            LDA VAR_tabHANDLER,X
+            PHA
+
+            JSR (KERN_CALLFROMROM)
+
+_exitint    LDAA VAR_HDLPTR
+            TAX
+            JMP _hdl2 ;Next handler
+
 
 ;DEBUG print time measurement and bit information
 #IFDEF DEBUG
@@ -499,7 +664,7 @@ int_idle
         LDA #' '
         JSR (KERN_PRINTCHAR)
         
-        JSR getBit
+        LDAA VAR_bitData
         CMP #80h
         JNZ _dbg0
         LDA #'H'
@@ -517,15 +682,18 @@ _dbg1   JSR (KERN_PRINTCHAR)
         LDA #')'
         JSR (KERN_PRINTCHAR) 
 #ENDIF 
+            
+;If not synced -> Stop decoding
+_nBit0      LDAA FLG_synced
+            JNZ _RTS
 
+;Check which second/bit we have            
             LDAA VAR_second
             JNZ _nBit3
-            JSR getBit
+            LDAA VAR_bitData
             JNZ deSync ;If Bit 0 != 0 -> Not synchronized or incorrect signal
             
 ;Second/bit = 0 -> Take over data from last minute    
-            LDAA FLG_synced
-            JNZ _RTS
             LDAA VAR_second
             TAY            
             LDAA VAR_dataOK
@@ -534,11 +702,19 @@ _dbg1   JSR (KERN_PRINTCHAR)
             LDAA VAR_tmpMinutes ;Take over 'minutes'
             STAA VAR_minutes
             TAX
+            PHX
+            LDX #04h
+            LDA START_DATA_STRUCT,X ;Add minutes to data struct in RAM
+            STA (ZP_dataStructPTR),X
 _nBit1      LDAA VAR_dataOK
             AND #02h
             JPZ _nBit2
             LDAA VAR_tmpHours ;Take over 'hours'
             STAA VAR_hours
+            LDX #05h
+            LDA START_DATA_STRUCT,X ;Add hours to data struct in RAM
+            STA (ZP_dataStructPTR),X
+            PLX
             ;Set system time
             PHA
             LDAA VAR_dataOK
@@ -564,7 +740,7 @@ _nBit2      LDAA VAR_dataOK
             STAA VAR_weekday
             LDAA VAR_tmpDay ;Take over 'day'
             STAA VAR_day
-            ;Set system date
+            ;Set system datetime
             PHA
             LDAA VAR_second
             CMP #0
@@ -572,17 +748,25 @@ _nBit2      LDAA VAR_dataOK
             PLA
             SEC
             JSR (KERN_GETSETDATE)
+            
+;fill struct in RAM with date data
+            LDX #06h
+_tFill0     LDA START_DATA_STRUCT,X
+            STA (ZP_dataStructPTR),X
+            INX
+            CPX #0Ah
+            JPC _RTS
+            JMP _tFill0
 
-            JMP _RTS
 
-;Bit > 0        
+;Second > 0        
 _nBit3      CMP #20
             JNZ _nBit4
-            JSR getBit ;Second/bit = 20 -> Begin of time information always '1'
+            LDAA VAR_bitData ;Second/bit = 20 -> Begin of time information always '1'
             JPZ deSync ;If Bit 20 != 1 -> Not synchronized or incorrect signal
             JMP _RTS
  
-;Bit != 20 - Get/decode data
+;Second != 20 - Get/decode data
 _nBit4      LDAA VAR_second
             CMP #15
             JNC getMeteo ;Go to meteo
@@ -610,7 +794,7 @@ _nBit4      LDAA VAR_second
             ;Second >= 59
             JNZ _RTS
             ;Second = 59 -> Leap second!
-            JSR getBit ;Always '0'
+            LDAA VAR_bitData ;Always '0'
             JNZ deSync 
             JMP _RTS
 
@@ -646,6 +830,19 @@ getMeteo
             SPT ZP_meteoRead
             PLR
             SPT ZP_meteoWrite
+            
+;fill data struct with meteo data (Zero terminated string)
+            LDX #0Ah
+            CLY
+_tFill1     LDA (ZP_meteoRead),Y
+            STA (ZP_dataStructPTR),X
+            INX
+            INY
+            CPX #5Dh
+            JPC _tFill2
+            JMP _tFill1
+
+_tFill2
 
 ;DEBUG print meteo string
 #IFDEF DEBUG
@@ -698,7 +895,7 @@ _gMet20     LDAA VAR_meteoCount1
             INCA VAR_meteoCount2
 
 ;Get bit (minutes)
-_gMin0      JSR getBit
+_gMin0      LDAA VAR_bitData
             ORAA VAR_bitCache+1
             SHR
             STAA VAR_bitCache+1
@@ -716,7 +913,7 @@ _gMet21     LDAA VAR_meteoCount2
 ;Last bit
 ;Check parity (minutes)        
 parityMinutes  
-            JSR getBit ;Get "Carry-Bit" and save it to stack for later use
+            LDAA VAR_bitData ;Get "Carry-Bit" and save it to stack for later use
             PHA
             ;Determine if bitcount of data is even or odd
             LDAA VAR_bitCache+1
@@ -785,7 +982,7 @@ _gMet30     LDAA VAR_meteoCount1
             INCA VAR_meteoCount2
 
 ;Get bit (hours)
-_gHrs0      JSR getBit
+_gHrs0      LDAA VAR_bitData
             ORAA VAR_bitCache+1
             SHR
             STAA VAR_bitCache+1
@@ -807,7 +1004,7 @@ _gMet31     LDAA VAR_meteoCount2
 ;Check parity (hours)         
 parityHours       
             SHRA VAR_bitCache+1
-            JSR getBit ;Get "Carry-Bit" and save it to stack for later use
+            LDAA VAR_bitData ;Get "Carry-Bit" and save it to stack for later use
             PHA
             ;Determine if bitcount of data is even or odd
             LDAA VAR_bitCache+1
@@ -873,7 +1070,7 @@ _gMet40     LDAA VAR_meteoCount1
             INCA VAR_meteoCount2
   
 ;Get bit (day)      
-_gDay0      JSR getBit
+_gDay0      LDAA VAR_bitData
             ORAA VAR_bitCache+1
             SHR
             STAA VAR_bitCache+1
@@ -938,7 +1135,7 @@ _gMet50     LDAA VAR_meteoCount1
             INCA VAR_meteoCount2
 
 ;Get bit (weekday)    
-_getWDay0   JSR getBit
+_getWDay0   LDAA VAR_bitData
             ORAA VAR_bitCache+1
             SHR
             STAA VAR_bitCache+1
@@ -1002,7 +1199,7 @@ _gMet60     LDAA VAR_meteoCount1
             INCA VAR_meteoCount2
         
 ;Get bit (month)
-_gMon0      JSR getBit
+_gMon0      LDAA VAR_bitData
             ORAA VAR_bitCache+1
             SHR
             STAA VAR_bitCache+1            
@@ -1068,7 +1265,7 @@ _gMet70     LDAA VAR_meteoCount1
 
 ;Get bit (year)
 _gYear0     SHRA VAR_bitCache+1
-            JSR getBit
+            LDAA VAR_bitData
             ORAA VAR_bitCache+1
             STAA VAR_bitCache+1
             JMP _RTS
@@ -1076,7 +1273,7 @@ _gYear0     SHRA VAR_bitCache+1
 ;Last bit
 ;Check parity for whole date (Day, weekday, month, year)         
 parityDate
-            JSR getBit ;Get "Carry-Bit" and save it to stack for later use
+            LDAA VAR_bitData ;Get "Carry-Bit" and save it to stack for later use
             PHA
             ;Count high bits and add it to "VAR_dateParity"
             ;Determine if bitcount of "VAR_dateParity" is even or odd
@@ -1129,15 +1326,9 @@ _pDateOK    LDAA VAR_bitCache+1
             
 ;Decoding end
 ;---------------------------------------------------------
+;END - Idle function
+;<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
-;DEBUG print interference sign
-#IFDEF DEBUG 
-    LDA #13 ;\r
-    JSR (KERN_PRINTCHAR)
-    LPT #STR_interference
-    JSR (KERN_PRINTSTR)
-#ENDIF 
-            RTS
             
 ;--------------------------------------------------------- 
 ;Display snyc/data status on Multi-I/O LEDs   
@@ -1236,7 +1427,7 @@ _sccB1      LDAA HDW_SCC_BOARD
 ;Helper functions   
 ;---------------------------------------------------------
 
-;Get bit information from Time (Output: A = High(80h), Low(00h))        
+;Get bit information from second (Output: A = High(80h), Low(00h))        
 getBit      
             LDAA VAR_bitCache
             CMP #PARAM_LOWHIGH
@@ -1247,7 +1438,7 @@ getBit
 _gBit0      CLA ;Time < PARAM_LOWHIGH -> Bit = 0
             RTS
         
-;Get bit information from Time as Char (Output: A = Char)        
+;Get bit information from second as Char (Output: A = Char)        
 getBitChar      
             LDAA VAR_bitCache
             CMP #PARAM_LOWHIGH
@@ -1257,8 +1448,6 @@ getBitChar
             SKB
 _gBitC0     LDA #'0' ;Time < PARAM_LOWHIGH -> Bit = 0
             RTS
-        
-       
 
     
 ;Count high bits
