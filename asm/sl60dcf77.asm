@@ -428,7 +428,6 @@ _setHDL0    TXA
             STA  VAR_tabHANDLER,X
             STY  VAR_tabHANDLER+1,X
             PLX
-            ;LDAA REG_ROMPAGE
             LDAA VAR_TEMP_ROMPAGE
             STA  VAR_tabHDLROMPAGE,X
             LDA #1
@@ -550,10 +549,7 @@ int_timer
 
 
 ;BEGIN - Idle function (Bit decoding)
-;>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-;--------------------------------------------------------- 
-;DCF77 decoding   
-;---------------------------------------------------------   
+;>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> 
 int_idle
 
 ;New bit available?
@@ -856,7 +852,7 @@ _tFill2
 
 _gMet12     STZA VAR_meteoCount1 ;Reset bit counter
             STZA VAR_meteoCount2 ;Reset bit counter            
-            JMP _RTS    
+            RTS    
             
 _gMet10     LDAA VAR_second ;Start minute (0, 3, 6, 9, ...)
             CMP #1
@@ -867,7 +863,7 @@ _gMet11     JSR getBitChar
             LDXA VAR_meteoCount1
             STA (ZP_meteoWrite),X
             INCA VAR_meteoCount1
-            JMP _RTS        
+            RTS       
 
 
 ;Get/decode minutes
@@ -898,7 +894,7 @@ _gMin0      LDAA VAR_bitData
             ORAA VAR_bitCache+1
             SHR
             STAA VAR_bitCache+1
-            JMP _RTS
+            RTS
 
 ;*** Get meteo 2/2 ***
 _gMet21     LDAA VAR_meteoCount2
@@ -935,7 +931,7 @@ _pMinBAD    LDA #00Eh ;Parity n.OK
     JSR (KERN_PRINTSTR)
 #ENDIF 
 
-            JMP _RTS
+            RTS
         
 _pMin0      PLA ;Bit count = "even"
             JNZ _pMinBAD
@@ -959,7 +955,7 @@ _pMinOK     LDAA VAR_bitCache+1
     CLY
     JSR (KERN_PRINTDEZ)
 #ENDIF 
-            JMP _RTS
+            RTS
         
     
 ;Get/decode hours
@@ -985,7 +981,7 @@ _gHrs0      LDAA VAR_bitData
             ORAA VAR_bitCache+1
             SHR
             STAA VAR_bitCache+1
-            JMP _RTS
+            RTS
 
 ;*** Get meteo 2/2 ***
 _gMet31     LDAA VAR_meteoCount2
@@ -1026,7 +1022,7 @@ _pHrsBAD    LDA #00Dh ;Parity n.OK
     JSR (KERN_PRINTSTR)
 #ENDIF 
 
-            JMP _RTS
+            RTS
             
 _pHrs0      PLA ;Bit count = "even"
             JNZ _pHrsBAD
@@ -1049,7 +1045,7 @@ _pHrsOK     LDAA VAR_bitCache+1
     CLY
     JSR (KERN_PRINTDEZ)
 #ENDIF 
-            JMP _RTS
+            RTS
                 
         
 ;Get/decode day
@@ -1114,7 +1110,7 @@ _gDay1      SHRA VAR_bitCache+1
     CLY
     JSR (KERN_PRINTDEZ)
 #ENDIF 
-            JMP _RTS        
+            RTS      
         
         
 ;Get/decode weekday
@@ -1178,7 +1174,7 @@ _getWDay1   LDAA VAR_bitCache+1
     JSR (KERN_PRINTDEZ)
 #ENDIF 
 
-            JMP _RTS  
+            RTS 
         
         
 ;Get/decode month
@@ -1242,7 +1238,7 @@ _gMon1      SHRA VAR_bitCache+1
     JSR (KERN_PRINTDEZ)
 #ENDIF 
 
-            JMP _RTS 
+            RTS
         
 ;Get/decode year
 ;---------------------------------------------------------
@@ -1267,7 +1263,7 @@ _gYear0     SHRA VAR_bitCache+1
             LDAA VAR_bitData
             ORAA VAR_bitCache+1
             STAA VAR_bitCache+1
-            JMP _RTS
+            RTS
 
 ;Last bit
 ;Check parity for whole date (Day, weekday, month, year)         
@@ -1296,7 +1292,7 @@ _pDateBAD   LDA #00Bh ;Partity n.OK
     JSR (KERN_PRINTSTR)
 #ENDIF
 
-            JMP _RTS
+            RTS
             
 _pDat0      PLA ;Bit count = "even"
             JNZ _pDateBAD
@@ -1320,11 +1316,8 @@ _pDateOK    LDAA VAR_bitCache+1
     JSR (KERN_PRINTDEZ)
 #ENDIF 
 
-            JMP _RTS
+            RTS
             
-            
-;Decoding end
-;---------------------------------------------------------
 ;END - Idle function
 ;<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
