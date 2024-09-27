@@ -456,9 +456,9 @@ int_dcf77
             RTS
 
             ;Check for interference
-            LDAA VAR_bitCount
+_rInt0      LDAA VAR_bitCount
             CMP #PARAM_IGNORE
-            JPC _rInt0
+            JPC _rInt6
             ;Interference detected -> Ignore
 
 ;DEBUG print interference            
@@ -471,7 +471,7 @@ int_dcf77
 
             RTS
 
-_rInt0      LDA #1 
+_rInt6      LDA #1 
             STAA FLG_dcfReceiver ;Flank detected -> Set flag (Pause timer count)
             INCA VAR_edgeCnt ;Count edges (For signal error detection)
             LDAA VAR_bitCount
@@ -502,7 +502,7 @@ _rInt2      CMP #PARAM_SECOND
             JNC _rInt3
             INCA VAR_second ;Time >= PARAM_SECOND -> Next second
             
-_rInt5      LDX #3
+_rInt5      LDX #03h
             LDAA VAR_second
             STA (ZP_dataStructPTR),X ;Add second to struct in RAM
             RTS
@@ -519,9 +519,9 @@ _rInt3      LDAA VAR_edgeCnt ;First do signal checking -> Twice as many edges+1 
 deSync  
             LDA #1 
             STAA FLG_synced
-            STZA VAR_dataOK
             LDA #08
             STAA VAR_ledsDataOK
+			STZA VAR_dataOK
             STZA VAR_second
             STZA VAR_meteoCount1
             STZA VAR_meteoCount2
@@ -529,20 +529,8 @@ deSync
 ;New bit -> Ready for decode   
 _rInt4      LDA #1
             STAA FLG_dcfReceiver+1
-                              
-;DEBUG print desynchronisation            
-#IFDEF DEBUG
-    LDAA FLG_synced
-    JPZ _RTS
-    LDA #13 ;\r
-    JSR (KERN_PRINTCHAR)
-    LPT #STR_lost_sync
-    JSR (KERN_PRINTSTR)
-#ENDIF 
 
             RTS
-
-
 ;END - Receiver interrupt
 ;<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -573,15 +561,6 @@ int_idle
             JPZ _RTS
             STZA FLG_dcfReceiver+1 ;Get ready for new bit immediately
 
-;Add data to struct in RAM
-            LDX #00h ;FLG_synced
-            LDA START_DATA_STRUCT,X
-            STA (ZP_dataStructPTR),X
-            
-            LDX #01h ;VAR_dataOK
-            LDA START_DATA_STRUCT,X
-            STA (ZP_dataStructPTR),X
-                   
 ;New bit received
 ;---------------------------------------------------------
 ;Display synced status on I/O-Module LEDs
@@ -591,9 +570,31 @@ int_idle
 ;Display synced status on SCC-Board
 #IFDEF SCC_BOARD
         JSR sccBoard
-#ENDIF  
+#ENDIF
+
+;Add data to struct in RAM
+            LDX #00h ;FLG_synced
+            LDAA FLG_synced
+			STA (ZP_dataStructPTR),X
+
+;DEBUG print desynchronisation            
+#IFDEF DEBUG
+        JPZ _dbg2
+        LDA #13 ;\r
+        JSR (KERN_PRINTCHAR)
+        LPT #STR_lost_sync
+        JSR (KERN_PRINTSTR)
+_dbg2
+#ENDIF 
+
+;Add data to struct in RAM
+            LDX #01h ;VAR_dataOK
+            LDA START_DATA_STRUCT,X
+            STA (ZP_dataStructPTR),X  
 
 ;Get bit information
+            LDAA FLG_synced
+			JNZ _hdl
             JSR getBit
             STAA VAR_bitData
             
@@ -602,10 +603,9 @@ int_idle
             LDA #1
 _tFill3     LDX #02h ;VAR_bitData
             STA (ZP_dataStructPTR),X
-            
-            
+                      
 ;Start application handler chain
-            LDAA VAR_HDLCount
+_hdl        LDAA VAR_HDLCount
             JPZ _nBit0 ;No handler registered
 
             CLX
@@ -636,7 +636,6 @@ _exitint    LDAA VAR_HDLPTR
             TAX
             JMP _hdl2 ;Next handler
 
-            
 ;If not synced -> Stop decoding
 _nBit0      LDAA FLG_synced
             JNZ _RTS
@@ -764,7 +763,7 @@ _nBit3      CMP #20
             JNZ _nBit4
             LDAA VAR_bitData ;Second/bit = 20 -> Begin of time information always '1'
             JPZ deSync ;If Bit 20 != 1 -> Not synchronized or incorrect signal
-            JMP _RTS
+            RTS
  
 ;Second != 20 - Get/decode data
 _nBit4      LDAA VAR_second
@@ -796,7 +795,7 @@ _nBit4      LDAA VAR_second
             ;Second = 59 -> Leap second!
             LDAA VAR_bitData ;Always '0'
             JNZ deSync 
-            JMP _RTS
+            RTS
 
 
 ;Get/decode meteotime
