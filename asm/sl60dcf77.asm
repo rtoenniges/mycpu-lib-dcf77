@@ -16,7 +16,7 @@
 ;Comment this line out if you dont want synced status on Multi-I/O-LEDs
 #DEFINE SYNC_DISP 
 ;Comment this line in if you use the SCC-Rack-Extension
-;#DEFINE SCC_BOARD 
+#DEFINE SCC_BOARD 
 ;Comment this line in if library should load on higher ROM-Page
 #DEFINE HIGH_ROM 
 ;Comment this line in if you want debug output
@@ -636,6 +636,10 @@ _exitint    LDAA VAR_HDLPTR
             TAX
             JMP _hdl2 ;Next handler
 
+            
+;If not synced -> Stop decoding
+_nBit0      LDAA FLG_synced
+            JNZ _RTS
 
 ;DEBUG print time measurement and bit information
 #IFDEF DEBUG
@@ -682,10 +686,6 @@ _dbg1   JSR (KERN_PRINTCHAR)
         LDA #')'
         JSR (KERN_PRINTCHAR) 
 #ENDIF 
-            
-;If not synced -> Stop decoding
-_nBit0      LDAA FLG_synced
-            JNZ _RTS
 
 ;Check which second/bit we have            
             LDAA VAR_second
