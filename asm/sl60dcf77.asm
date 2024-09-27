@@ -16,7 +16,7 @@
 ;Comment this line out if you dont want synced status on Multi-I/O-LEDs
 #DEFINE SYNC_DISP 
 ;Comment this line in if you use the SCC-Rack-Extension
-#DEFINE SCC_BOARD 
+;#DEFINE SCC_BOARD 
 ;Comment this line in if library should load on higher ROM-Page
 #DEFINE HIGH_ROM 
 ;Comment this line in if you want debug output
