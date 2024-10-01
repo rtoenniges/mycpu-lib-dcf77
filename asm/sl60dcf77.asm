@@ -600,8 +600,6 @@ _dbg2
             STA (ZP_dataStructPTR),X  
 
 ;Get bit information
-            LDAA FLG_synced
-            JNZ _hdl
             JSR getBit
             STAA VAR_bitData
             
@@ -612,7 +610,7 @@ _tFill3     LDX #02h ;VAR_bitData
             STA (ZP_dataStructPTR),X
                       
 ;Start application handler chain
-_hdl        POP ZP_dataStructPTR ;Restore ZP from stack
+            POP ZP_dataStructPTR ;Restore ZP from stack
             LDAA VAR_HDLCount
             JPZ _nBit0 ;No handler registered
 
