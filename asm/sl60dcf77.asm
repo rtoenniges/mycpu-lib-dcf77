@@ -123,7 +123,8 @@ VAR_tabHANDLER      DS  2*PAR_HDLMax  ;Address register for handlers
 VAR_tabHDLROMPAGE   DS  PAR_HDLMax ;ROM-Pages from registered handlers
 
 VAR_HDLCount        DB  0 ;Number of registered handlers
-VAR_HDLbitmask      DB  0,0,0,0,0,0 ;Bitmask of enabled handlers
+VAR_HDLbitmaskREG   DB  0,0,0,0,0,0 ;Bitmask of registered handlers
+VAR_HDLbitmaskEN    DB  0,0,0,0,0,0 ;Bitmask of enabled handlers
 VAR_HDLPTR          DB  0 ;Current active handler
 VAR_TEMP_ROMPAGE    DS  1 ;ROMPAGE from application
 VAR_TEMP            DS  2 ;Temporary application handler address
@@ -273,6 +274,8 @@ funcdispatch
             JPZ func_getDataStruct  ;Function 0Bh
             DEC
             JPZ func_setHandler     ;Function 0Ch
+            DEC
+            JPZ func_tellROMPage    ;Function 0Dh
             JMP _failRTS
   
        
@@ -388,33 +391,19 @@ func_getDataStruct
             JMP _RTS
 
 ;Function '0Ch' = Set/Delete event handler (Triggered after every new bit)
-;C(1) = Set new handler -> X/Y = Handler-Address, ROMPAGE in stack
+;C(1) = Set new handler -> X/Y = Handler-Address, Accu = Return Handler-No.
 ;C(0) = Delete handler -> Handler-No. in X-Reg
 ;Return Carry = 0 if successfull
 func_setHandler
             JNC _clrHDL0
             SPTA VAR_TEMP
-            
-            ;Save and restore Stack + Get ROMPAGE from Stack            
-            PLR
-            SPTA VAR_TEMP2
-            STAA VAR_TEMP2+2
-            PLR
-            SPTA VAR_TEMP2+3
-            STAA VAR_TEMP_ROMPAGE
-            LPTA VAR_TEMP2+3
-            PHX
-            PHY
-            LDAA VAR_TEMP2+2
-            LPTA VAR_TEMP2
-            PHR
     
 ;Set new handler
             LPTA VAR_TEMP
             TXA
             CLX
             PHA
-_setHDL1    LDA VAR_HDLbitmask,X
+_setHDL1    LDA VAR_HDLbitmaskREG,X
             JPZ _setHDL0
             INX
             CPX #PAR_HDLMax
@@ -430,10 +419,8 @@ _setHDL0    TXA
             STA  VAR_tabHANDLER,X
             STY  VAR_tabHANDLER+1,X
             PLX
-            LDAA VAR_TEMP_ROMPAGE
-            STA  VAR_tabHDLROMPAGE,X
             LDA #1
-            STA  VAR_HDLbitmask,X
+            STA  VAR_HDLbitmaskREG,X
             INCA VAR_HDLCount
             TXA
             INC ;Increment Handler number so it begins with 1
@@ -441,8 +428,21 @@ _setHDL0    TXA
 ;Delete handler            
 _clrHDL0    CLA
             DEX ;Decrement handler number
-            STA VAR_HDLbitmask, X
-            DECA VAR_HDLCount ;Delete handler           
+            STA VAR_HDLbitmaskEN, X ;Disable handler 
+            STA VAR_HDLbitmaskREG, X ;Delete handler 
+            DECA VAR_HDLCount          
+            JMP _RTS
+
+
+;Function '0Dh' = Tell ROMPAGE to registered handler routine and enable handler
+;Handler-No. in X-Register, ROMPAGE-No. in Y-Register
+;Return Carry = 0 if successfull
+func_tellROMPage
+            TYA
+            DEX
+            STA  VAR_tabHDLROMPAGE,X
+            LDA #1
+            STA  VAR_HDLbitmaskEN, X
             JMP _RTS
 
 ;--------------------------------------------------------- 
@@ -615,7 +615,7 @@ _tFill3     LDX #02h ;VAR_bitData
             JPZ _nBit0 ;No handler registered
 
             CLX
-_hdl0       LDA VAR_HDLbitmask,X
+_hdl0       LDA VAR_HDLbitmaskEN,X
             JNZ _hdl1
 _hdl2       INX
             CPX #PAR_HDLMax
