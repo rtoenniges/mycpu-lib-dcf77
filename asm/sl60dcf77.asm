@@ -394,6 +394,7 @@ func_getDataStruct
 ;C(1) = Set new handler -> X/Y = Handler-Address, Accu = Return Handler-No.
 ;C(0) = Delete handler -> Handler-No. in X-Reg
 ;Return Carry = 0 if successfull
+; -> Function '0Dh' = "Tell ROMPAGE" need to be called also!
 func_setHandler
             JNC _clrHDL0
             SPTA VAR_TEMP
@@ -594,11 +595,6 @@ int_idle
 _dbg2
 #ENDIF 
 
-;Add data to struct in RAM
-            LDX #01h ;VAR_dataOK
-            LDA START_DATA_STRUCT,X
-            STA (ZP_dataStructPTR),X  
-
 ;Get bit information
             JSR getBit
             STAA VAR_bitData
@@ -608,43 +604,11 @@ _dbg2
             LDA #1
 _tFill3     LDX #02h ;VAR_bitData
             STA (ZP_dataStructPTR),X
-                      
-;Start application handler chain
             POP ZP_dataStructPTR ;Restore ZP from stack
-            LDAA VAR_HDLCount
-            JPZ _nBit0 ;No handler registered
-
-            CLX
-_hdl0       LDA VAR_HDLbitmaskEN,X
-            JNZ _hdl1
-_hdl2       INX
-            CPX #PAR_HDLMax
-            JPC _nBit0 ;End of handler chain -> Start decoding
-            JMP _hdl0
-            
-_hdl1       TXA
-            STAA VAR_HDLPTR ;Current active handler No.
-            SHL
-            TAX
-
-;call handler-routines in ROM
-            LDYA VAR_HDLPTR
-            LDA VAR_tabHDLROMPAGE,Y
-            PHA
-            LDA VAR_tabHANDLER+1,X
-            PHA
-            LDA VAR_tabHANDLER,X
-            PHA
-
-            JSR (KERN_CALLFROMROM)
-
-_exitint    LDAA VAR_HDLPTR
-            TAX
-            JMP _hdl2 ;Next handler
-
+                      
 ;If not synced -> Stop decoding
 _nBit0      LDAA FLG_synced
-            JNZ _RTS
+            JNZ hdlRTS
 
 ;DEBUG print time measurement and bit information
 #IFDEF DEBUG
@@ -738,7 +702,7 @@ _nBit1      LDAA VAR_dataOK
 _nBit2      POP ZP_dataStructPTR ;Restore ZP from stack
             LDAA VAR_dataOK
             AND #04h
-            JPZ _RTS
+            JPZ hdlRTS
             LDAA VAR_tmpYear ;Take over 'year'
             STAA VAR_year
             TAY
@@ -753,7 +717,7 @@ _nBit2      POP ZP_dataStructPTR ;Restore ZP from stack
             PHA
             LDAA VAR_second
             CMP #0
-            JNZ _RTS ;Sync every minute at xx:xx:00
+            JNZ hdlRTS ;Sync every minute at xx:xx:00
             PLA
             SEC
             JSR (KERN_GETSETDATE)
@@ -771,14 +735,14 @@ _tFill0     LDA START_DATA_STRUCT,X
             JMP _tFill0
 
 _tFill4     POP ZP_dataStructPTR ;Restore ZP from stack
-            RTS
+            JMP hdlRTS
 
 ;Second > 0        
 _nBit3      CMP #20
             JNZ _nBit4
             LDAA VAR_bitData ;Second/bit = 20 -> Begin of time information always '1'
             JPZ deSync ;If Bit 20 != 1 -> Not synchronized or incorrect signal
-            RTS
+            JMP hdlRTS
  
 ;Second != 20 - Get/decode data
 _nBit4      LDAA VAR_second
@@ -786,7 +750,7 @@ _nBit4      LDAA VAR_second
             JNC getMeteo ;Go to meteo
             ;Second >= 15
             CMP #21
-            JNC _RTS ; Ignore bit 15-20
+            JNC hdlRTS ; Ignore bit 15-20
             ;Second >= 21
             CMP #29
             JNC getMinutes ;Go to minute decoding
@@ -806,11 +770,11 @@ _nBit4      LDAA VAR_second
             CMP #59
             JNC getYear ;Go to year decoding
             ;Second >= 59
-            JNZ _RTS
+            JNZ hdlRTS
             ;Second = 59 -> Leap second!
             LDAA VAR_bitData ;Always '0'
             JNZ deSync 
-            RTS
+            JMP hdlRTS
 
 
 ;Get/decode meteotime
@@ -823,7 +787,7 @@ getMeteo
             ;Minute -> n+1 or n+2
             LDAA VAR_meteoCount1
             CMP #14
-            JNC _RTS ;Previous data not complete
+            JNC hdlRTS ;Previous data not complete
             TAX
             PUSH ZP_meteoRW ;Save ZP to stack
             PHX
@@ -837,7 +801,7 @@ getMeteo
             CMP #41
             JPZ _getMeteo0
             POP ZP_meteoRW ;Restore ZP from stack
-            RTS
+            JMP hdlRTS
             
             ;Last bit received
 _getMeteo0  CLA
@@ -885,7 +849,7 @@ _tFill2
 
 _gMet12     STZA VAR_meteoCount1 ;Reset bit counter
             STZA VAR_meteoCount2 ;Reset bit counter            
-            RTS    
+            JMP hdlRTS    
             
 ;Start minute (0, 3, 6, 9, ...)
 _gMet10     LDAA VAR_second
@@ -901,7 +865,7 @@ _gMet11     JSR getBitChar
             STA (ZP_meteoRW),X
             INCA VAR_meteoCount1
             POP ZP_meteoRW ;Restore ZP from stack
-            RTS       
+            JMP hdlRTS       
 
 
 ;Get/decode minutes
@@ -936,7 +900,7 @@ _gMin0      LDAA VAR_bitData
             ORAA VAR_bitCache+1
             SHR
             STAA VAR_bitCache+1
-            RTS
+            JMP hdlRTS
 
 ;*** Get meteo 2/2 ***
 _gMet21     LDAA VAR_meteoCount2
@@ -977,7 +941,7 @@ _pMinBAD    LDA #00Eh ;Parity n.OK
     JSR (KERN_PRINTSTR)
 #ENDIF 
 
-            RTS
+            JMP hdlRTS
         
 _pMin0      PLA ;Bit count = "even"
             JNZ _pMinBAD
@@ -1001,7 +965,7 @@ _pMinOK     LDAA VAR_bitCache+1
     CLY
     JSR (KERN_PRINTDEZ)
 #ENDIF 
-            RTS
+            JMP hdlRTS
         
     
 ;Get/decode hours
@@ -1031,7 +995,7 @@ _gHrs0      LDAA VAR_bitData
             ORAA VAR_bitCache+1
             SHR
             STAA VAR_bitCache+1
-            RTS
+            JMP hdlRTS
 
 ;*** Get meteo 2/2 ***
 _gMet31     LDAA VAR_meteoCount2
@@ -1076,7 +1040,7 @@ _pHrsBAD    LDA #00Dh ;Parity n.OK
     JSR (KERN_PRINTSTR)
 #ENDIF 
 
-            RTS
+            JMP hdlRTS
             
 _pHrs0      PLA ;Bit count = "even"
             JNZ _pHrsBAD
@@ -1099,7 +1063,7 @@ _pHrsOK     LDAA VAR_bitCache+1
     CLY
     JSR (KERN_PRINTDEZ)
 #ENDIF 
-            RTS
+            JMP hdlRTS
                 
         
 ;Get/decode day
@@ -1130,7 +1094,7 @@ _gDay0      LDAA VAR_bitData
             ;Check for last bit
             LDAA VAR_second
             CMP #41       
-            JNZ _RTS 
+            JNZ hdlRTS 
 
 ;*** Get meteo 2/2 ***
             LDAA VAR_meteoCount2
@@ -1146,7 +1110,7 @@ _gDay0      LDAA VAR_bitData
             STA (ZP_meteoRW),X ; 2. '0'
             LDA #71
             STAA VAR_meteoCount2  
-            POP    ZP_meteoRW ;Restore ZP from stack
+            POP ZP_meteoRW ;Restore ZP from stack
             
 ;Last bit
 _gDay1      SHRA VAR_bitCache+1
@@ -1172,7 +1136,7 @@ _gDay1      SHRA VAR_bitCache+1
     CLY
     JSR (KERN_PRINTDEZ)
 #ENDIF 
-            RTS      
+            JMP hdlRTS      
         
         
 ;Get/decode weekday
@@ -1203,7 +1167,7 @@ _getWDay0   LDAA VAR_bitData
             ;Check for last bit
             LDAA VAR_second
             CMP #44       
-            JNZ _RTS
+            JNZ hdlRTS
 
 ;*** Get meteo 2/2 ***
             LDAA VAR_meteoCount2
@@ -1240,7 +1204,7 @@ _getWDay1   LDAA VAR_bitCache+1
     JSR (KERN_PRINTDEZ)
 #ENDIF 
 
-            RTS 
+            JMP hdlRTS 
         
         
 ;Get/decode month
@@ -1271,7 +1235,7 @@ _gMon0      LDAA VAR_bitData
             ;Check for last bit
             LDAA VAR_second
             CMP #49       
-            JNZ _RTS 
+            JNZ hdlRTS 
 
 ;*** Get meteo 2/2 ***
             LDAA VAR_meteoCount2
@@ -1308,7 +1272,7 @@ _gMon1      SHRA VAR_bitCache+1
     JSR (KERN_PRINTDEZ)
 #ENDIF 
 
-            RTS
+            JMP hdlRTS
         
 ;Get/decode year
 ;---------------------------------------------------------
@@ -1337,7 +1301,7 @@ _gYear0     SHRA VAR_bitCache+1
             LDAA VAR_bitData
             ORAA VAR_bitCache+1
             STAA VAR_bitCache+1
-            RTS
+            JMP hdlRTS
 
 ;Last bit
 ;Check parity for whole date (Day, weekday, month, year)         
@@ -1366,7 +1330,7 @@ _pDateBAD   LDA #00Bh ;Partity n.OK
     JSR (KERN_PRINTSTR)
 #ENDIF
 
-            RTS
+            JMP hdlRTS
             
 _pDat0      PLA ;Bit count = "even"
             JNZ _pDateBAD
@@ -1389,6 +1353,47 @@ _pDateOK    LDAA VAR_bitCache+1
     CLY
     JSR (KERN_PRINTDEZ)
 #ENDIF 
+
+;Add data to struct in RAM
+hdlRTS      PUSH ZP_dataStructPTR ;Save ZP to stack
+            LPTA VAR_dataStructPTR
+            SPT ZP_dataStructPTR
+            LDX #01h ;VAR_dataOK
+            LDA START_DATA_STRUCT,X
+            STA (ZP_dataStructPTR),X 
+            POP ZP_dataStructPTR
+    
+;Start application handler chain
+            LDAA VAR_HDLCount
+            JPZ _RTS ;No handler registered
+
+            CLX
+_hdl0       LDA VAR_HDLbitmaskEN,X
+            JNZ _hdl1
+_hdl2       INX
+            CPX #PAR_HDLMax
+            JPC _RTS ;End of handler chain
+            JMP _hdl0
+            
+_hdl1       TXA
+            STAA VAR_HDLPTR ;Current active handler No.
+            SHL
+            TAX
+
+;call handler-routines in ROM
+            LDYA VAR_HDLPTR
+            LDA VAR_tabHDLROMPAGE,Y
+            PHA
+            LDA VAR_tabHANDLER+1,X
+            PHA
+            LDA VAR_tabHANDLER,X
+            PHA
+
+            JSR (KERN_CALLFROMROM)
+
+_exitint    LDAA VAR_HDLPTR
+            TAX
+            JMP _hdl2 ;Next handler
 
             RTS
             
