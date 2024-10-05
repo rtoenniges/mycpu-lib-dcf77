@@ -7,7 +7,7 @@
                 ;******************************************
                 ;***********  DCF77 Library  **************
                 ;******************************************
-                ;***** by Robin Tönniges (2016-2024) ******
+                ;***** by Robin Toenniges (2016-2024) *****
                 ;******************************************
                 
                 ;[File: C:\Program Files (x86)\myca\include\conio.hsm]
@@ -130,8 +130,58 @@
                 ADR_RAMPAGE_START   SET 4000h
                 
                 ;[File: sl60dcf77.asm]
+                ;[File: C:\Program Files (x86)\myca\include\registers.hsm]
+                ;[ASCII]
+                
+                IOSPACE1   SET 2000h  ;2000 - 27FFh
+                IOSPACE2   SET 2800h  ;2800 - 2FFFh
+                
+                EMULATORTAGADDR    SET 3FF5h
+                INTCONTROLLER      SET IOSPACE1+0100h
+                REG_IC_IEMASK      SET INTCONTROLLER 
+                REG_IC_INT         SET INTCONTROLLER+1
+                KEYBOARDCONTROLLER SET IOSPACE1+0200h
+                KEYBOARDIRQ        SET 1
+                PRINTERPORT        SET IOSPACE1+0380h
+                PRINTERDATA        SET PRINTERPORT
+                PRINTERCONTROL     SET PRINTERPORT+1
+                PRINTERSTATUS      SET PRINTERPORT+1
+                RS232BASE          SET IOSPACE1+0300h
+                RS232DIF           SET 8
+                RS232PORT1         SET RS232BASE
+                RS232PORT2         SET RS232BASE+RS232DIF
+                RS232P1IRQ         SET 2
+                RS232P2IRQ         SET 3
+                RS_DATA            SET 0
+                LCDBASE            SET IOSPACE1+0280h
+                REG_SDRV_BLOCKL    SET 1100h
+                REG_SDRV_BLOCKH    SET 1120h
+                REG_SDRV_MAGIC     SET 1140h
+                REG_SDRV_STATUS    SET 1100h
+                REG_SDRV_DATA      SET 1000h
+                REG_RTC_ADR        SET 11C0h
+                REG_RTC_DIN        SET 1180h
+                REG_RTC_DOUT       SET 1180h
+                SCREENIOBASE       SET 1400h
+                SCREEN_DATA        SET SCREENIOBASE
+                SCREEN_COLOR       SET SCREENIOBASE+0100h
+                REG_SCR_FIRSTLINE  SET SCREENIOBASE+0200h
+                REG_SCR_RAMBLOCK   SET SCREENIOBASE+0280h
+                REG_SCR_GFXCOLOR   SET SCREENIOBASE+0300h
+                REG_SCR_FLAGS      SET SCREENIOBASE+0380h
+                
+                REG_ZEROPAGE       SET 3A00h
+                REG_STACKPAGE      SET 3B00h
+                
+                RAMPAGE_BASIC      SET 0
+                RAMPAGE_OS         SET 1
+                ROMPAGE_RAM0       SET 080h
+                ROMPAGE_ROM0       SET 000h
+                
+                ;[File: sl60dcf77.asm]
                 ;Comment this line out if you dont want synced status on Multi-I/O-LEDs
                 ;Comment this line in if you use the SCC-Rack-Extension
+                ;#DEFINE SCC_BOARD 
                 ;Comment this line in if library should load on higher ROM-Page
                 ;Comment this line in if you want debug output
                 ;#DEFINE DEBUG
@@ -142,16 +192,15 @@
                 
                 ORG 8000h
     8000 0280    DW 8002h
-    8002 CA80    DW initfunc
-    8004 1581    DW termfunc
-    8006 CA80    DW codestart
+    8002 F880    DW initfunc
+    8004 4F81    DW termfunc
+    8006 F880    DW codestart
                 ;-------------------------------------;
                 ; declare variables
                 
                 ;Addresses
                 HDW_INT             EQU 7       ;IRQ7
                 
-                HDW_SCC_BOARD       EQU 3000h   ;Address of SCC board
                 
                 KERN_IOCHANGELED    EQU 0306h   ;Kernel routine for changing the Multi-I/O-LEDs
                 
@@ -169,103 +218,127 @@
     8008 01     FLG_firstStart      DB  1   ;This flag indicates first start of library -> Ignore first edge
     8009 0000   FLG_dcfReceiver     DW  0   ;This flag is set to 1 if new input (rising edge) comes from the DCF77-Receiver
                                             ;FLG_dcfReceiver+1 is set to 1 if bit is ready for decoding
-    800B 01     FLG_synced          DB  1   ;Sync flag -> 0 if synchron with dcf77
-    800C 00     VAR_bitCount        DB  0   ;Timer Interrupt Counter
-    800D 0000   VAR_bitCache        DW  0   ;Byte 0 = time value, Byte 1 = temp value
-    800F 00     VAR_edgeCnt         DB  0   ;Edge counter
-    8010 00     VAR_dataOK          DB  0   ;Parity check -> Bit 1 = Minutes OK, Bit 2 = Hours OK, Bit 3 = Date OK, Bit 4 = Meteo OK
+    800B 00     VAR_bitCount        DB  0   ;Timer Interrupt Counter
+    800C 0000   VAR_bitCache        DW  0   ;Byte 0 = time value, Byte 1 = temp value
+    800E 00     VAR_edgeCnt         DB  0   ;Edge counter
+                
+    800F 00     VAR_dateParity      DB  0
                 
                 ;VAR_pSecond         DB  0   ;Pseudo second to bridge desynchronization
-    8011 00     VAR_second          DB  0   ;DCF77-Second/Bit counter
                 
                 ;Time variables initialized with FFh to "lock" Get-functions until 2nd synchronization point reached
-    8012 FF     VAR_minutes         DB  0FFh
-    8013 FF     VAR_hours           DB  0FFh
+                START_DATA_STRUCT
+    8010 01     FLG_synced          DB  1   ;00h | Sync flag -> 0 if synchron with dcf77
+    8011 00     VAR_dataOK          DB  0   ;01h | Parity check -> Bit 0 = Minutes OK, Bit 1 = Hours OK, Bit 2 = Date OK, Bit 3 = Meteo OK
+    8012 00     VAR_bitData         DB  0   ;02h | Bit data '0->00h' or '1->80h' of current second
                 
-    8014 FF     VAR_day             DB  0FFh
-    8015 FF     VAR_weekday         DB  0FFh
-    8016 FF     VAR_month           DB  0FFh
-    8017 FF     VAR_year            DB  0FFh
+    8013 FF     VAR_second          DB  0FFh ;03h | DCF77-Second/Bit counter
+    8014 FF     VAR_minutes         DB  0FFh ;04h
+    8015 FF     VAR_hours           DB  0FFh ;05h
                 
-    8018 00     VAR_dateParity      DB  0
+    8016 FF     VAR_day             DB  0FFh ;06h
+    8017 FF     VAR_weekday         DB  0FFh ;07h
+    8018 FF     VAR_month           DB  0FFh ;08h
+    8019 FF     VAR_year            DB  0FFh ;09h                          
+                END_DATA_STRUCT ; + Meteo data -> 0Ah - 5Dh 
                 
-                ;2x 82 Bit + 0 (Little endian)
-    8019 000000 VAR_meteo1          DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ;Weather bits n
-    801C 000000 
-    801F 000000 
-    8022 000000 
-    8025 0000   
-    8027 000000                     DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ;Weather bits n+1
-    802A 000000 
-    802D 000000 
-    8030 000000 
-    8033 0000   
+                PAR_DATA_SIZE       EQU END_DATA_STRUCT - START_DATA_STRUCT + 83
+                
+                ;2x 82 Bit + 0
+    801A 000000 VAR_meteo1          DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ;Weather bits n
+    801D 000000 
+    8020 000000 
+    8023 000000 
+    8026 0000   
+    8028 000000                     DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ;Weather bits n+1
+    802B 000000 
+    802E 000000 
+    8031 000000 
+    8034 0000   
                                         ;******* Minute *******|********* Hour *********|********* Day **********|**** Month ****|*** WD **|******** Year *********|
-    8035 000000                     DB  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0
-    8038 000000 
-    803B 000000 
-    803E 000000 
-    8041 000000 
-    8044 000000 
-    8047 000000 
-    804A 000000 
-    804D 000000 
-    8050 000000 
-    8053 000000 
-    8056 000000 
-    8059 000000 
-    805C 00     
-    805D 000000                     DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ;Weather bits n+2
-    8060 000000 
-    8063 000000 
-    8066 000000 
-    8069 000000 
+    8036 000000                     DB  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0
+    8039 000000 
+    803C 000000 
+    803F 000000 
+    8042 000000 
+    8045 000000 
+    8048 000000 
+    804B 000000 
+    804E 000000 
+    8051 000000 
+    8054 000000 
+    8057 000000 
+    805A 000000 
+    805D 00     
+    805E 000000                     DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ;Weather bits n+2
+    8061 000000 
+    8064 000000 
+    8067 000000 
+    806A 000000 
                 
-    806C 000000 VAR_meteo2          DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-    806F 000000 
-    8072 000000 
-    8075 000000 
-    8078 0000   
-    807A 000000                     DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-    807D 000000 
-    8080 000000 
-    8083 000000 
-    8086 0000   
-    8088 000000                     DB  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0
-    808B 000000 
-    808E 000000 
-    8091 000000 
-    8094 000000 
-    8097 000000 
-    809A 000000 
-    809D 000000 
-    80A0 000000 
-    80A3 000000 
-    80A6 000000 
-    80A9 000000 
-    80AC 000000 
-    80AF 00     
-    80B0 000000                     DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-    80B3 000000 
-    80B6 000000 
-    80B9 000000 
-    80BC 000000 
+    806D 000000 VAR_meteo2          DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    8070 000000 
+    8073 000000 
+    8076 000000 
+    8079 0000   
+    807B 000000                     DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    807E 000000 
+    8081 000000 
+    8084 000000 
+    8087 0000   
+    8089 000000                     DB  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0
+    808C 000000 
+    808F 000000 
+    8092 000000 
+    8095 000000 
+    8098 000000 
+    809B 000000 
+    809E 000000 
+    80A1 000000 
+    80A4 000000 
+    80A7 000000 
+    80AA 000000 
+    80AD 000000 
+    80B0 00     
+    80B1 000000                     DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    80B4 000000 
+    80B7 000000 
+    80BA 000000 
+    80BD 000000 
                 
-                ZP_meteoWrite       EQU 10h ;Write pointer for meteo data
-                ZP_meteoRead        EQU 12h ;Read pointer for meteo data
-    80BF 00     VAR_meteoCount1     DB  0 ;Weather bit counter (0-41)
-    80C0 00     VAR_meteoCount2     DB  0 ;Time bit counter (42-81)
+                ;TODO: Zeropages reduzieren (Evtl. nur einer?!) -> Pointer zuerst in normalen Variablen speichern 
+                VAR_meteoWritePTR   DS  2
+                VAR_meteoReadPTR    DS  2
+                VAR_dataStructPTR   DS  2
                 
-    80C1 00     VAR_tmpMinutes      DB  0
-    80C2 00     VAR_tmpHours        DB  0
-    80C3 00     VAR_tmpDay          DB  0
-    80C4 00     VAR_tmpWeekday      DB  0
-    80C5 00     VAR_tmpMonth        DB  0
-    80C6 00     VAR_tmpYear         DB  0
-    80C7 00     VAR_ledsDataOK      DB  0
+                ZP_meteoRW          EQU 10h ;Write pointer for meteo data
+                ZP_dataStructPTR    EQU 12h ;Pointer for Data struct
+    80C6 00     VAR_meteoCount1     DB  0 ;Weather bit counter (0-41)
+    80C7 00     VAR_meteoCount2     DB  0 ;Time bit counter (42-81)
                 
-    80C8 00     VAR_timerhandle     DB  0   ;Address of timer interrupt handle
-    80C9 00     VAR_RAMPAGE         DB  0
+    80C8 00     VAR_tmpMinutes      DB  0
+    80C9 00     VAR_tmpHours        DB  0
+    80CA 00     VAR_tmpDay          DB  0
+    80CB 00     VAR_tmpWeekday      DB  0
+    80CC 00     VAR_tmpMonth        DB  0
+    80CD 00     VAR_tmpYear         DB  0
+    80CE 00     VAR_ledsDataOK      DB  0
+                
+    80CF 00     VAR_timerhandle     DB  0   ;Address of timer interrupt handle
+                
+                PAR_HDLMax          SET 6 ;Maximum number of App-Handler
+                VAR_tabHANDLER      DS  2*PAR_HDLMax  ;Address register for handlers
+                VAR_tabHDLROMPAGE   DS  PAR_HDLMax ;ROM-Pages from registered handlers
+                
+    80E2 00     VAR_HDLCount        DB  0 ;Number of registered handlers
+    80E3 000000 VAR_HDLbitmaskREG   DB  0,0,0,0,0,0 ;Bitmask of registered handlers
+    80E6 000000 
+    80E9 000000 VAR_HDLbitmaskEN    DB  0,0,0,0,0,0 ;Bitmask of enabled handlers
+    80EC 000000 
+    80EF 00     VAR_HDLPTR          DB  0 ;Current active handler
+                VAR_TEMP_ROMPAGE    DS  1 ;ROMPAGE from application
+                VAR_TEMP            DS  2 ;Temporary application handler address
+                VAR_TEMP2           DS  5 ;Temporary stack variable
                 
                 
                 ;-------------------------------------;
@@ -279,195 +352,280 @@
                 ;Library initialization
                 ;---------------------------------------------------------   
                 initfunc
-    80CA E000               ORA #0
-    80CC 183781             JNZ funcdispatch
-    80CF 04                 CLC
-    80D0 1BD202             JSR (KERN_ISLOADED)
-    80D3 2C                 CLA
-    80D4 170387             JPC _RTS
+    80F8 E000               ORA #0
+    80FA 187081             JNZ funcdispatch
+    80FD 04                 CLC
+    80FE 1BD202             JSR (KERN_ISLOADED)
+    8101 2C                 CLA
+    8102 179188             JPC _RTS
                 
                 ;Initialize Zeropointer
-    80D7 3C10               FLG ZP_meteoWrite
-    80D9 3C11               FLG ZP_meteoWrite+1
-    80DB 3C12               FLG ZP_meteoRead
-    80DD 3C13               FLG ZP_meteoRead+1
+    8105 3C10               FLG ZP_meteoRW
+    8107 3C11               FLG ZP_meteoRW+1
+    8109 3C12               FLG ZP_dataStructPTR
+    810B 3C13               FLG ZP_dataStructPTR+1
                 
-                            ;move this program to a separate memory page
-    80DF 6CCA80             LPT  #codestart
-    80E2 300E               LDA  #0Eh
-    80E4 1B1203             JSR  (KERN_MULTIPLEX)  ;may fail on older kernel
+                ;Move this program to a separate memory page
+    810D 6CF880             LPT  #codestart
+    8110 300E               LDA  #0Eh
+    8112 1B1203             JSR  (KERN_MULTIPLEX)  ;may fail on older kernel
                 
-    80E7 6C1980             LPT #VAR_meteo1
-    80EA 6F12               SPT ZP_meteoRead
-    80EC 6C6C80             LPT #VAR_meteo2
-    80EF 6F10               SPT ZP_meteoWrite
+                ;Initialize Meteo-Data Read/Write pointer
+    8115 6C1A80             LPT #VAR_meteo1
+    8118 6EC280             SPTA VAR_meteoReadPTR
+    811B 6C6D80             LPT #VAR_meteo2
+    811E 6EC080             SPTA VAR_meteoWritePTR
+                
+                ;Allocate RAM for Data-Struct            
+    8121 6C5D00             LPT #PAR_DATA_SIZE
+    8124 05                 SEC
+    8125 1BC802             JSR (KERN_MALLOCFREE)
+    8128 6EC480             SPTA VAR_dataStructPTR
                 
                 ;Enable hardware interrupt (IRQ7)
-    80F1 3007               LDA #HDW_INT
-    80F3 6C0382             LPT #int_dcf77
-    80F6 1B2802             JSR (KERN_IC_SETVECTOR)
-    80F9 1B2202             JSR (KERN_IC_ENABLEINT)
+    812B 3007               LDA #HDW_INT
+    812D 6C9E82             LPT #int_dcf77
+    8130 1B2802             JSR (KERN_IC_SETVECTOR)
+    8133 1B2202             JSR (KERN_IC_ENABLEINT)
                 
                 ;Enable timer interrupt
-    80FC 2C                 CLA    
-    80FD 6C6C82             LPT #int_timer
-    8100 1B1203             JSR (KERN_MULTIPLEX)
-    8103 42C880             STAA VAR_timerhandle  ;Save adress of timerhandle 
+    8136 2C                 CLA    
+    8137 6C1983             LPT #int_timer
+    813A 1B1203             JSR (KERN_MULTIPLEX)
+    813D 42CF80             STAA VAR_timerhandle  ;Save adress of timerhandle 
                 
                 ;Register idle function
-    8106 05                 SEC
-    8107 6C7682             LPT #int_idle
-    810A 1BEA02             JSR (KERN_SETIDLEFUNC)
+    8140 05                 SEC
+    8141 6C2383             LPT #int_idle
+    8144 1BEA02             JSR (KERN_SETIDLEFUNC)
                 
                 ;If sync display enabled clear LEDs 
-    810D 2C                 CLA
-    810E 1B0603             JSR (KERN_IOCHANGELED)
-    8111 2C                 CLA
-    8112 11C202             JMP (KERN_EXITTSR)
+    8147 2C                 CLA
+    8148 1B0603             JSR (KERN_IOCHANGELED)
+    814B 2C                 CLA
+    814C 11C202             JMP (KERN_EXITTSR)
                 
                 ;Termination function
                 ;---------------------------------------------------------                  
                 termfunc  
                             ;Disable timer-interrupt
-    8115 3001               LDA  #1
-    8117 52C880             LDXA VAR_timerhandle      
-    811A 1B1203             JSR (KERN_MULTIPLEX)
+    814F 3001               LDA  #1
+    8151 52CF80             LDXA VAR_timerhandle      
+    8154 1B1203             JSR (KERN_MULTIPLEX)
                             ;Disable hardware-interrupt
-    811D 3007               LDA #HDW_INT
-    811F 1B2402             JSR (KERN_IC_DISABLEINT)
+    8157 3007               LDA #HDW_INT
+    8159 1B2402             JSR (KERN_IC_DISABLEINT)
                             ;Disable idle function
-    8122 04                 CLC
-    8123 6C7682             LPT #int_idle
-    8126 1BEA02             JSR (KERN_SETIDLEFUNC)
+    815C 04                 CLC
+    815D 6C2383             LPT #int_idle
+    8160 1BEA02             JSR (KERN_SETIDLEFUNC)
+                            ;Free allocated RAM
+    8163 04                 CLC
+    8164 6DC480             LPTA VAR_dataStructPTR
+    8167 1BC802             JSR (KERN_MALLOCFREE)
                 
                             ;Set LEDs to default
-    8129 30FF               LDA #0FFh
-    812B 1B0603             JSR (KERN_IOCHANGELED)
+    816A 30FF               LDA #0FFh
+    816C 1B0603             JSR (KERN_IOCHANGELED)
                 
-    812E 320030             LDAA HDW_SCC_BOARD
-    8131 D0FB               AND #0FBh
-    8133 420030             STAA HDW_SCC_BOARD
-    8136 1F                 RTS
+    816F 1F                 RTS
                 
                 ;Functiondispatch
                 ;---------------------------------------------------------     
                 funcdispatch
-    8137 9B                 DEC
-    8138 196681             JPZ func_getSeconds     ;Function 01h  
-    813B 9B                 DEC 
-    813C 197281             JPZ func_getMinutes     ;Function 02h         
-    813F 9B                 DEC 
-    8140 198581             JPZ func_getHours       ;Function 03h 
-    8143 9B                 DEC 
-    8144 199881             JPZ func_getDay         ;Function 04h   
-    8147 9B                 DEC 
-    8148 19AB81             JPZ func_getWeekday     ;Function 05h       
-    814B 9B                 DEC 
-    814C 19BE81             JPZ func_getMonth       ;Function 06h      
-    814F 9B                 DEC 
-    8150 19D181             JPZ func_getYear        ;Function 07h 
-    8153 9B                 DEC 
-    8154 19E481             JPZ func_getMeteoTime   ;Function 08h
-    8157 9B                 DEC 
-    8158 19F181             JPZ func_getEntryPoint  ;Function 09h
-    815B 9B                 DEC
-    815C 19F781             JPZ func_getROMPage     ;Function 0Ah
-    815F 9B                 DEC
-    8160 19FD81             JPZ func_getRAMPage     ;Function 0Bh
-    8163 100587             JMP _failRTS
+    8170 9B                 DEC
+    8171 19A781             JPZ func_getSeconds     ;Function 01h  
+    8174 9B                 DEC 
+    8175 19B381             JPZ func_getMinutes     ;Function 02h         
+    8178 9B                 DEC 
+    8179 19C681             JPZ func_getHours       ;Function 03h 
+    817C 9B                 DEC 
+    817D 19D981             JPZ func_getDay         ;Function 04h   
+    8180 9B                 DEC 
+    8181 19EC81             JPZ func_getWeekday     ;Function 05h       
+    8184 9B                 DEC 
+    8185 19FF81             JPZ func_getMonth       ;Function 06h      
+    8188 9B                 DEC 
+    8189 191282             JPZ func_getYear        ;Function 07h 
+    818C 9B                 DEC 
+    818D 192582             JPZ func_getMeteoTime   ;Function 08h
+    8190 9B                 DEC 
+    8191 193382             JPZ func_getEntryPoint  ;Function 09h
+    8194 9B                 DEC
+    8195 193982             JPZ func_getROMPage     ;Function 0Ah
+    8198 9B                 DEC
+    8199 193F82             JPZ func_getDataStruct  ;Function 0Bh
+    819C 9B                 DEC
+    819D 194E82             JPZ func_setHandler     ;Function 0Ch
+    81A0 9B                 DEC
+    81A1 199182             JPZ func_tellROMPage    ;Function 0Dh
+    81A4 109388             JMP _failRTS
                 
                 ;Function '01h' = Get seconds (OUTPUT = Accu), Carry = 0 if successfull
                 func_getSeconds
-    8166 320B80             LDAA FLG_synced
-    8169 180587             JNZ _failRTS
-    816C 321180             LDAA VAR_second
-    816F 100387             JMP _RTS
+    81A7 321080             LDAA FLG_synced
+    81AA 189388             JNZ _failRTS
+    81AD 321380             LDAA VAR_second
+    81B0 109188             JMP _RTS
                 
                 ;Function '02h' = Get minutes (OUTPUT = Accu), Carry = 0 if successfull         
                 func_getMinutes  
-    8172 321080             LDAA VAR_dataOK
-    8175 D001               AND #01h
-    8177 190587             JPZ _failRTS
-    817A 321280             LDAA VAR_minutes
-    817D 70FF               CMP #0FFh
-    817F 190587             JPZ _failRTS
-    8182 100387             JMP _RTS
+    81B3 321180             LDAA VAR_dataOK
+    81B6 D001               AND #01h
+    81B8 199388             JPZ _failRTS
+    81BB 321480             LDAA VAR_minutes
+    81BE 70FF               CMP #0FFh
+    81C0 199388             JPZ _failRTS
+    81C3 109188             JMP _RTS
                 
                 ;Function '03h' = Get hours (OUTPUT = Accu), Carry = 0 if successfull 
                 func_getHours
-    8185 321080             LDAA VAR_dataOK
-    8188 D002               AND #02h
-    818A 190587             JPZ _failRTS
-    818D 321380             LDAA VAR_hours
-    8190 70FF               CMP #0FFh
-    8192 190587             JPZ _failRTS
-    8195 100387             JMP _RTS        
+    81C6 321180             LDAA VAR_dataOK
+    81C9 D002               AND #02h
+    81CB 199388             JPZ _failRTS
+    81CE 321580             LDAA VAR_hours
+    81D1 70FF               CMP #0FFh
+    81D3 199388             JPZ _failRTS
+    81D6 109188             JMP _RTS        
                 
                 ;Function '04h' = Get day (OUTPUT = Accu), Carry = 0 if successfull 
                 func_getDay
-    8198 321080             LDAA VAR_dataOK
-    819B D004               AND #04h
-    819D 190587             JPZ _failRTS
-    81A0 321480             LDAA VAR_day
-    81A3 70FF               CMP #0FFh
-    81A5 190587             JPZ _failRTS
-    81A8 100387             JMP _RTS    
+    81D9 321180             LDAA VAR_dataOK
+    81DC D004               AND #04h
+    81DE 199388             JPZ _failRTS
+    81E1 321680             LDAA VAR_day
+    81E4 70FF               CMP #0FFh
+    81E6 199388             JPZ _failRTS
+    81E9 109188             JMP _RTS    
                 
                 ;Function '05h' = Get weekday (OUTPUT = Accu), Carry = 0 if successfull 
                 ;1 = monday, 2 = tuesday, 3 = wednesday, 4 = thursday, 5 = friday, 6 = saturday, 7 = sunday
                 func_getWeekday
-    81AB 321080             LDAA VAR_dataOK
-    81AE D004               AND #04h
-    81B0 190587             JPZ _failRTS
-    81B3 321580             LDAA VAR_weekday
-    81B6 70FF               CMP #0FFh
-    81B8 190587             JPZ _failRTS
-    81BB 100387             JMP _RTS   
+    81EC 321180             LDAA VAR_dataOK
+    81EF D004               AND #04h
+    81F1 199388             JPZ _failRTS
+    81F4 321780             LDAA VAR_weekday
+    81F7 70FF               CMP #0FFh
+    81F9 199388             JPZ _failRTS
+    81FC 109188             JMP _RTS   
                 
                 ;Function '06h' = Get month (OUTPUT = Accu), Carry = 0 if successfull 
                 func_getMonth
-    81BE 321080             LDAA VAR_dataOK
-    81C1 D004               AND #04h
-    81C3 190587             JPZ _failRTS
-    81C6 321680             LDAA VAR_month
-    81C9 70FF               CMP #0FFh
-    81CB 190587             JPZ _failRTS
-    81CE 100387             JMP _RTS     
+    81FF 321180             LDAA VAR_dataOK
+    8202 D004               AND #04h
+    8204 199388             JPZ _failRTS
+    8207 321880             LDAA VAR_month
+    820A 70FF               CMP #0FFh
+    820C 199388             JPZ _failRTS
+    820F 109188             JMP _RTS     
                 
                 ;Function '07h' = Get year (OUTPUT = Accu), Carry = 0 if successfull 
                 func_getYear
-    81D1 321080             LDAA VAR_dataOK
-    81D4 D004               AND #04h
-    81D6 190587             JPZ _failRTS
-    81D9 321780             LDAA VAR_year
-    81DC 70FF               CMP #0FFh
-    81DE 190587             JPZ _failRTS
-    81E1 100387             JMP _RTS
+    8212 321180             LDAA VAR_dataOK
+    8215 D004               AND #04h
+    8217 199388             JPZ _failRTS
+    821A 321980             LDAA VAR_year
+    821D 70FF               CMP #0FFh
+    821F 199388             JPZ _failRTS
+    8222 109188             JMP _RTS
                 
                 ;Function '08h' = Get encoded METEO Information (X/Y = Pointer to zero terminated string), Carry = 0 if successfull
                 ;Bit 0-41 = meteotime (3 minutes)
                 ;Bit 42-81 = time information (Minutes + Hours + Day + Month + Weekday + Year) without parity
                 func_getMeteoTime
-    81E4 321080             LDAA VAR_dataOK
-    81E7 D008               AND #08h
-    81E9 190587             JPZ _failRTS
-    81EC 5F12               LPT ZP_meteoRead
-    81EE 100387             JMP _RTS
+    8225 321180             LDAA VAR_dataOK
+    8228 D008               AND #08h
+    822A 199388             JPZ _failRTS
+    822D 6DC280             LPTA VAR_meteoReadPTR
+    8230 109188             JMP _RTS
                 
                 ;Function '09h' = Get entrypoint of library         
                 func_getEntryPoint
-    81F1 6C3781             LPT #funcdispatch
-    81F4 100387             JMP _RTS
+    8233 6C7081             LPT #funcdispatch
+    8236 109188             JMP _RTS
                 
                 ;Function '0Ah' = Get ROM-Page of library
                 func_getROMPage
-    81F7 320039             LDAA REG_ROMPAGE
-    81FA 100387             JMP _RTS
+    8239 320039             LDAA REG_ROMPAGE
+    823C 109188             JMP _RTS
                 
-                ;Function '0Bh' = Get RAM-Page of library
-                func_getRAMPage
-    81FD 320038             LDAA REG_RAMPAGE
-    8200 100387             JMP _RTS
+                ;Function '0Bh' = Get data struct
+                ;X/Y = Pointer to struct in RAM, Accu = RAMPAGE
+                ;   Byte 0 = Sync flag -> 0 if synchron with dcf77
+                ;   Byte 1 = Parity check -> Bit 1 = Minutes OK, Bit 2 = Hours OK, Bit 3 = Date OK, Bit 4 = Meteo OK
+                ;   Byte 2 = Bit data 0 or 1 for current second
+                ;   Byte 3 = Second
+                ;   Byte 4 = Minute
+                ;   Byte 5 = Hour
+                ;   Byte 6 = Day
+                ;   Byte 7 = Weekday
+                ;   Byte 8 = Month
+                ;   Byte 9 = Year
+                ;   Byte 10 - 92 = Meteo data (Zero terminated bit string)
+                func_getDataStruct
+    823F 6DC480             LPTA VAR_dataStructPTR
+    8242 29                 SAY
+    8243 05                 SEC
+    8244 9080               SBC #ROMPAGE_RAM0
+    8246 29                 SAY
+    8247 320039             LDAA REG_ROMPAGE
+    824A 6B                 INC
+    824B 109188             JMP _RTS
+                
+                ;Function '0Ch' = Set/Delete event handler (Triggered after every new bit)
+                ;C(1) = Set new handler -> X/Y = Handler-Address, Accu = Return Handler-No.
+                ;C(0) = Delete handler -> Handler-No. in X-Reg
+                ;Return Carry = 0 if successfull
+                ; -> Function '0Dh' = "Tell ROMPAGE" need to be called also!
+                func_setHandler
+    824E 168382             JNC _clrHDL0
+    8251 6EF180             SPTA VAR_TEMP
+                
+                ;Set new handler
+    8254 6DF180             LPTA VAR_TEMP
+    8257 21                 TXA
+    8258 2D                 CLX
+    8259 08                 PHA
+    825A 35E380 _setHDL1    LDA VAR_HDLbitmaskREG,X
+    825D 196A82             JPZ _setHDL0
+    8260 7B                 INX
+    8261 6006               CPX #PAR_HDLMax
+    8263 165A82             JNC _setHDL1 
+    8266 0C                 PLA ;Dummy
+    8267 109388             JMP _failRTS ;No free handler
+                
+    826A 21     _setHDL0    TXA
+    826B 0D                 PLX ;Accu = Handl. Nr., X = Low-Address, Y = High-Address
+    826C 08                 PHA
+    826D CB                 SHL ;Double handler number (2 Bytes per handler)
+    826E 28                 SAX
+    826F 45D080             STA  VAR_tabHANDLER,X
+    8272 5DD180             STY  VAR_tabHANDLER+1,X
+    8275 0D                 PLX
+    8276 3001               LDA #1
+    8278 45E380             STA  VAR_HDLbitmaskREG,X
+    827B 7DE280             INCA VAR_HDLCount
+    827E 21                 TXA
+    827F 6B                 INC ;Increment Handler number so it begins with 1
+    8280 109188             JMP _RTS
+                ;Delete handler            
+    8283 2C     _clrHDL0    CLA
+    8284 AB                 DEX ;Decrement handler number
+    8285 45E980             STA VAR_HDLbitmaskEN, X ;Disable handler 
+    8288 45E380             STA VAR_HDLbitmaskREG, X ;Delete handler 
+    828B 8DE280             DECA VAR_HDLCount          
+    828E 109188             JMP _RTS
+                
+                ;Function '0Dh' = Tell ROMPAGE to registered handler routine and enable handler
+                ;Handler-No. in X-Register, ROMPAGE-No. in Y-Register
+                ;Return Carry = 0 if successfull
+                func_tellROMPage
+    8291 23                 TYA
+    8292 AB                 DEX
+    8293 45DC80             STA  VAR_tabHDLROMPAGE,X
+    8296 3001               LDA #1
+    8298 45E980             STA  VAR_HDLbitmaskEN, X
+    829B 109188             JMP _RTS
                 
                 ;--------------------------------------------------------- 
                 ;Interrupt routines   
@@ -477,74 +635,79 @@
                 ;>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>    
                 int_dcf77
                             ;First start?
-    8203 320880             LDAA FLG_firstStart
-    8206 191682             JPZ _rInt0
-    8209 2F0880             STZA FLG_firstStart
-    820C 1F                 RTS
+    829E 320880             LDAA FLG_firstStart
+    82A1 19A882             JPZ _rInt0
+    82A4 2F0880             STZA FLG_firstStart
+    82A7 1F                 RTS
                 
                             ;Check for interference
-    820D 320C80             LDAA VAR_bitCount
-    8210 7002               CMP #PARAM_IGNORE
-    8212 171682             JPC _rInt0
+    82A8 320B80 _rInt0      LDAA VAR_bitCount
+    82AB 7002               CMP #PARAM_IGNORE
+    82AD 17B182             JPC _rInt6
                             ;Interference detected -> Ignore
                 
                 ;DEBUG print interference            
                 
-    8215 1F                 RTS
+    82B0 1F                 RTS
                 
-    8216 3001   _rInt0      LDA #1 
-    8218 420980             STAA FLG_dcfReceiver ;Flank detected -> Set flag (Pause timer count)
-    821B 7D0F80             INCA VAR_edgeCnt ;Count edges (For signal error detection)
-    821E 320C80             LDAA VAR_bitCount
-    8221 420D80             STAA VAR_bitCache ;Move bitCounter to cache
-    8224 2F0C80             STZA VAR_bitCount
-    8227 2F0980             STZA FLG_dcfReceiver ;Resume timer count
+    82B1 3001   _rInt6      LDA #1 
+    82B3 420980             STAA FLG_dcfReceiver ;Flank detected -> Set flag (Pause timer count)
+    82B6 7D0E80             INCA VAR_edgeCnt ;Count edges (For signal error detection)
+    82B9 320B80             LDAA VAR_bitCount
+    82BC 420C80             STAA VAR_bitCache ;Move bitCounter to cache
+    82BF 2F0B80             STZA VAR_bitCount
+    82C2 2F0980             STZA FLG_dcfReceiver ;Resume timer count
                 
                             ;LDAA VAR_bitCache 
-    822A 7032               CMP #PARAM_SYNCPAUSE ;Synchronize with signal -> Detect syncpoint/-gap
-    822C 163982             JNC _rInt2
+    82C5 7032               CMP #PARAM_SYNCPAUSE ;Synchronize with signal -> Detect syncpoint/-gap
+    82C7 16D682             JNC _rInt2
                             ;Time >= PARAM_SYNCPAUSE -> Time longer than 1 second
                             ;Syncpoint reached
-    822F 2F0B80             STZA FLG_synced
-    8232 2F1180             STZA VAR_second
-    8235 2F0F80             STZA VAR_edgeCnt
+    82CA 2F1080             STZA FLG_synced
+    82CD 2F1380             STZA VAR_second
+    82D0 2F0E80             STZA VAR_edgeCnt
                 
                 
-    8238 1F                 RTS
+    82D3 10DE82             JMP _rInt5
                 
                 ;Time < PARAM_SYNCPAUSE          
-    8239 7014   _rInt2      CMP #PARAM_SECOND 
-    823B 164282             JNC _rInt3
-    823E 7D1180             INCA VAR_second ;Time >= PARAM_SECOND -> Next second
-    8241 1F                 RTS
+    82D6 7014   _rInt2      CMP #PARAM_SECOND 
+    82D8 16EF82             JNC _rInt3
+    82DB 7D1380             INCA VAR_second ;Time >= PARAM_SECOND -> Next second
+                
+    82DE 9A12   _rInt5      PUSH ZP_dataStructPTR ;Save ZP to stack
+    82E0 6DC480             LPTA VAR_dataStructPTR
+    82E3 6F12               SPT ZP_dataStructPTR
+    82E5 5003               LDX #03h
+    82E7 321380             LDAA VAR_second
+    82EA 4312               STA (ZP_dataStructPTR),X ;Add second to struct in RAM
+    82EC AA12               POP ZP_dataStructPTR ;Restore ZP from stack
+    82EE 1F                 RTS
                 
                 ;Time < PARAM_SECOND -> New bit
-    8242 320F80 _rInt3      LDAA VAR_edgeCnt ;First do signal checking -> Twice as many edges+1 as seconds?
-    8245 05                 SEC
-    8246 9001               SBC #1
-    8248 B002               DIV #2
-    824A 721180             CMPA VAR_second
-    824D 196682             JPZ _rInt4 ;Check successfull -> Go forward to bit checking
+    82EF 320E80 _rInt3      LDAA VAR_edgeCnt ;First do signal checking -> Twice as many edges+1 as seconds?
+    82F2 05                 SEC
+    82F3 9001               SBC #1
+    82F5 B002               DIV #2
+    82F7 721380             CMPA VAR_second
+    82FA 191383             JPZ _rInt4 ;Check successfull -> Go forward to bit checking
                 
                 ;No longer synchronized        
                 deSync  
-    8250 3001               LDA #1 
-    8252 420B80             STAA FLG_synced
-    8255 2F1080             STZA VAR_dataOK
-    8258 3008               LDA #08
-    825A 42C780             STAA VAR_ledsDataOK
-    825D 2F1180             STZA VAR_second
-    8260 2FBF80             STZA VAR_meteoCount1
-    8263 2FC080             STZA VAR_meteoCount2
+    82FD 3001               LDA #1 
+    82FF 421080             STAA FLG_synced
+    8302 3008               LDA #08
+    8304 42CE80             STAA VAR_ledsDataOK
+    8307 2F1180             STZA VAR_dataOK
+    830A 2F1380             STZA VAR_second
+    830D 2FC680             STZA VAR_meteoCount1
+    8310 2FC780             STZA VAR_meteoCount2
                 
                 ;New bit -> Ready for decode   
-    8266 3001   _rInt4      LDA #1
-    8268 420A80             STAA FLG_dcfReceiver+1
+    8313 3001   _rInt4      LDA #1
+    8315 420A80             STAA FLG_dcfReceiver+1
                 
-                ;DEBUG print desynchronisation            
-                
-    826B 1F                 RTS
-                
+    8318 1F                 RTS
                 ;END - Receiver interrupt
                 ;<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
                 
@@ -552,708 +715,831 @@
                 ;>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> 
                 int_timer
                             ;Measure time between two edges
-    826C 320980             LDAA FLG_dcfReceiver
-    826F 180387             JNZ _RTS       
-    8272 7D0C80             INCA VAR_bitCount
-    8275 1F                 RTS
+    8319 320980             LDAA FLG_dcfReceiver
+    831C 189188             JNZ _RTS       
+    831F 7D0B80             INCA VAR_bitCount
+    8322 1F                 RTS
                 ;END - Timer interrupt
                 ;<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
                 
                 ;BEGIN - Idle function (Bit decoding)
                 ;>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> 
                 int_idle
-    8276 320A80             LDAA FLG_dcfReceiver+1
-    8279 190387             JPZ _RTS
-    827C 2F0A80             STZA FLG_dcfReceiver+1 ;Get ready for new bit immediately
-                ;--------------------------------------------------------- 
-                ;DCF77 decoding   
-                ;---------------------------------------------------------                     
+                
+                ;New bit available?
+    8323 320A80             LDAA FLG_dcfReceiver+1
+    8326 199188             JPZ _RTS
+    8329 2F0A80             STZA FLG_dcfReceiver+1 ;Get ready for new bit immediately
                 
                 ;New bit received
                 ;---------------------------------------------------------
                 ;Display synced status on I/O-Module LEDs
-    827F 1A1E86         JSR syncDisp
+    832C 1ADF87         JSR syncDisp
                 ;Display synced status on SCC-Board
-    8282 1A9186         JSR sccBoard
                 
-    8285 320B80         LDAA FLG_synced
-    8288 180387         JNZ _RTS
+                ;Add data to struct in RAM
+    832F 9A12               PUSH ZP_dataStructPTR ;Save ZP to stack
+    8331 6DC480             LPTA VAR_dataStructPTR
+    8334 6F12               SPT ZP_dataStructPTR
+    8336 5000               LDX #00h ;FLG_synced
+    8338 321080             LDAA FLG_synced
+    833B 4312               STA (ZP_dataStructPTR),X
+                
+                ;DEBUG print desynchronisation            
+                
+                ;Get bit information
+    833D 1A5288             JSR getBit
+    8340 421280             STAA VAR_bitData
+                
+                ;Add data to struct in RAM
+    8343 194883             JPZ _tFill3
+    8346 3001               LDA #1
+    8348 5002   _tFill3     LDX #02h ;VAR_bitData
+    834A 4312               STA (ZP_dataStructPTR),X
+    834C AA12               POP ZP_dataStructPTR ;Restore ZP from stack
+                
+                ;If not synced -> Stop decoding
+    834E 321080 _nBit0      LDAA FLG_synced
+    8351 189987             JNZ hdlRTS
                 
                 ;DEBUG print time measurement and bit information
                 
-    828B 321180             LDAA VAR_second
-    828E 180683             JNZ _nBit3
-    8291 1AC486             JSR getBit
-    8294 185082             JNZ deSync ;If Bit 0 != 0 -> Not synchronized or incorrect signal
+                ;Check which second/bit we have            
+    8354 321380             LDAA VAR_second
+    8357 18FB83             JNZ _nBit3
+    835A 321280             LDAA VAR_bitData
+    835D 18FD82             JNZ deSync ;If Bit 0 != 0 -> Not synchronized or incorrect signal
                 
-                ;Second/bit = 0 -> Take over data from last minute    
-    8297 320B80             LDAA FLG_synced
-    829A 180387             JNZ _RTS
-    829D 321180             LDAA VAR_second
-    82A0 22                 TAY            
-    82A1 321080             LDAA VAR_dataOK
-    82A4 D001               AND #01h
-    82A6 19B082             JPZ _nBit1
-    82A9 32C180             LDAA VAR_tmpMinutes ;Take over 'minutes'
-    82AC 421280             STAA VAR_minutes
-    82AF 20                 TAX
-    82B0 321080 _nBit1      LDAA VAR_dataOK
-    82B3 D002               AND #02h
-    82B5 19D382             JPZ _nBit2
-    82B8 32C280             LDAA VAR_tmpHours ;Take over 'hours'
-    82BB 421380             STAA VAR_hours
+                ;Second/bit = 0 -> Take over data from last minute  
+    8360 9A12               PUSH ZP_dataStructPTR ;Save ZP to stack
+    8362 6DC480             LPTA VAR_dataStructPTR
+    8365 6F12               SPT ZP_dataStructPTR  
+    8367 321380             LDAA VAR_second
+    836A 22                 TAY            
+    836B 321180             LDAA VAR_dataOK
+    836E D001               AND #01h
+    8370 198283             JPZ _nBit1
+    8373 32C880             LDAA VAR_tmpMinutes ;Take over 'minutes'
+    8376 421480             STAA VAR_minutes
+    8379 20                 TAX
+    837A 09                 PHX
+    837B 5004               LDX #04h
+    837D 351080             LDA START_DATA_STRUCT,X
+    8380 4312               STA (ZP_dataStructPTR),X ;Add minutes to data struct in RAM
+    8382 321180 _nBit1      LDAA VAR_dataOK
+    8385 D002               AND #02h
+    8387 19AD83             JPZ _nBit2
+    838A 32C980             LDAA VAR_tmpHours
+    838D 421580             STAA VAR_hours ;Take over 'hours'
+    8390 5005               LDX #05h
+    8392 351080             LDA START_DATA_STRUCT,X
+    8395 4312               STA (ZP_dataStructPTR),X ;Add hours to data struct in RAM
+    8397 0D                 PLX
                             ;Set system time
-    82BE 08                 PHA
-    82BF 321080             LDAA VAR_dataOK
-    82C2 D003               AND #03h
-    82C4 7003               CMP #03h
-    82C6 180387             JNZ _RTS
-    82C9 0C                 PLA
-    82CA 6400               CPY #0
-    82CC 18D382             JNZ _nBit2 ;Sync every minute at xx:xx:00
-    82CF 05                 SEC
-    82D0 1B9A02             JSR (KERN_GETSETTIME)
+    8398 08                 PHA
+    8399 321180             LDAA VAR_dataOK
+    839C D003               AND #03h
+    839E 7003               CMP #03h
+    83A0 18AD83             JNZ _nBit2
+    83A3 0C                 PLA
+    83A4 6400               CPY #0
+    83A6 18AD83             JNZ _nBit2 ;Sync every minute at xx:xx:00
+    83A9 05                 SEC
+    83AA 1B9A02             JSR (KERN_GETSETTIME)
                 
-    82D3 321080 _nBit2      LDAA VAR_dataOK
-    82D6 D004               AND #04h
-    82D8 190387             JPZ _RTS
-    82DB 32C680             LDAA VAR_tmpYear ;Take over 'year'
-    82DE 421780             STAA VAR_year
-    82E1 22                 TAY
-    82E2 32C580             LDAA VAR_tmpMonth ;Take over 'month'
-    82E5 421680             STAA VAR_month
-    82E8 20                 TAX
-    82E9 32C480             LDAA VAR_tmpWeekday ;Take over 'weekday'
-    82EC 421580             STAA VAR_weekday
-    82EF 32C380             LDAA VAR_tmpDay ;Take over 'day'
-    82F2 421480             STAA VAR_day
-                            ;Set system date
-    82F5 08                 PHA
-    82F6 321180             LDAA VAR_second
-    82F9 7000               CMP #0
-    82FB 180387             JNZ _RTS ;Sync every minute at xx:xx:00
-    82FE 0C                 PLA
-    82FF 05                 SEC
-    8300 1B9C02             JSR (KERN_GETSETDATE)
+    83AD AA12   _nBit2      POP ZP_dataStructPTR ;Restore ZP from stack
+    83AF 321180             LDAA VAR_dataOK
+    83B2 D004               AND #04h
+    83B4 199987             JPZ hdlRTS
+    83B7 32CD80             LDAA VAR_tmpYear ;Take over 'year'
+    83BA 421980             STAA VAR_year
+    83BD 22                 TAY
+    83BE 32CC80             LDAA VAR_tmpMonth ;Take over 'month'
+    83C1 421880             STAA VAR_month
+    83C4 20                 TAX
+    83C5 32CB80             LDAA VAR_tmpWeekday ;Take over 'weekday'
+    83C8 421780             STAA VAR_weekday
+    83CB 32CA80             LDAA VAR_tmpDay ;Take over 'day'
+    83CE 421680             STAA VAR_day
+                            ;Set system datetime
+    83D1 08                 PHA
+    83D2 321380             LDAA VAR_second
+    83D5 7000               CMP #0
+    83D7 189987             JNZ hdlRTS ;Sync every minute at xx:xx:00
+    83DA 0C                 PLA
+    83DB 05                 SEC
+    83DC 1B9C02             JSR (KERN_GETSETDATE)
                 
-    8303 100387             JMP _RTS
+                ;fill struct in RAM with date data
+    83DF 9A12               PUSH ZP_dataStructPTR ;Save ZP to stack
+    83E1 6DC480             LPTA VAR_dataStructPTR
+    83E4 6F12               SPT ZP_dataStructPTR 
+    83E6 5006               LDX #06h
+    83E8 351080 _tFill0     LDA START_DATA_STRUCT,X
+    83EB 4312               STA (ZP_dataStructPTR),X
+    83ED 7B                 INX
+    83EE 600A               CPX #0Ah
+    83F0 17F683             JPC _tFill4
+    83F3 10E883             JMP _tFill0
                 
-                ;Bit > 0        
-    8306 7014   _nBit3      CMP #20
-    8308 181483             JNZ _nBit4
-    830B 1AC486             JSR getBit ;Second/bit = 20 -> Begin of time information always '1'
-    830E 195082             JPZ deSync ;If Bit 20 != 1 -> Not synchronized or incorrect signal
-    8311 100387             JMP _RTS
+    83F6 AA12   _tFill4     POP ZP_dataStructPTR ;Restore ZP from stack
+    83F8 109987             JMP hdlRTS
                 
-                ;Bit != 20 - Get/decode data
-    8314 321180 _nBit4      LDAA VAR_second
-    8317 700F               CMP #15
-    8319 164B83             JNC getMeteo ;Go to meteo
+                ;Second > 0        
+    83FB 7014   _nBit3      CMP #20
+    83FD 180984             JNZ _nBit4
+    8400 321280             LDAA VAR_bitData ;Second/bit = 20 -> Begin of time information always '1'
+    8403 19FD82             JPZ deSync ;If Bit 20 != 1 -> Not synchronized or incorrect signal
+    8406 109987             JMP hdlRTS
+                
+                ;Second != 20 - Get/decode data
+    8409 321380 _nBit4      LDAA VAR_second
+    840C 700F               CMP #15
+    840E 164084             JNC getMeteo ;Go to meteo
                             ;Second >= 15
-    831C 7015               CMP #21
-    831E 160387             JNC _RTS ; Ignore bit 15-20
+    8411 7015               CMP #21
+    8413 169987             JNC hdlRTS ; Ignore bit 15-20
                             ;Second >= 21
-    8321 701D               CMP #29
-    8323 16A983             JNC getMinutes ;Go to minute decoding
+    8416 701D               CMP #29
+    8418 16D784             JNC getMinutes ;Go to minute decoding
                             ;Second >= 29
-    8326 7024               CMP #36
-    8328 162A84             JNC getHours ;Go to hour decoding
+    841B 7024               CMP #36
+    841D 166A85             JNC getHours ;Go to hour decoding
                             ;Second >= 36
-    832B 702A               CMP #42
-    832D 16A584             JNC getDay ;Go to day decoding
+    8420 702A               CMP #42
+    8422 16F785             JNC getDay ;Go to day decoding
                             ;Second >= 42
-    8330 702D               CMP #45
-    8332 160285             JNC getWDay ;Go to weekday decoding
+    8425 702D               CMP #45
+    8427 166686             JNC getWDay ;Go to weekday decoding
                             ;Second >= 45
-    8335 7032               CMP #50
-    8337 165B85             JNC getMonth ;Go to month decoding
+    842A 7032               CMP #50
+    842C 16C886             JNC getMonth ;Go to month decoding
                             ;Second >= 50
-    833A 703B               CMP #59
-    833C 16B585             JNC getYear ;Go to year decoding
+    842F 703B               CMP #59
+    8431 162B87             JNC getYear ;Go to year decoding
                             ;Second >= 59
-    833F 180387             JNZ _RTS
+    8434 189987             JNZ hdlRTS
                             ;Second = 59 -> Leap second!
-    8342 1AC486             JSR getBit ;Always '0'
-    8345 185082             JNZ deSync 
-    8348 100387             JMP _RTS
+    8437 321280             LDAA VAR_bitData ;Always '0'
+    843A 18FD82             JNZ deSync 
+    843D 109987             JMP hdlRTS
                 
                 ;Get/decode meteotime
                 ;---------------------------------------------------------
                 getMeteo    
-    834B 1A7281             JSR func_getMinutes
-    834E 178483             JPC _gMet12 ;No minute data available -> Skip meteo section
-    8351 C003               MOD #3
-    8353 198D83             JPZ _gMet10 ;//Check for start minute -> = 0, 3, 6, 9, ...
+    8440 1AB381             JSR func_getMinutes
+    8443 17A984             JPC _gMet12 ;No minute data available -> Skip meteo section
+    8446 C003               MOD #3
+    8448 19B284             JPZ _gMet10 ;//Check for start minute -> = 0, 3, 6, 9, ...
                             ;Minute -> n+1 or n+2
-    8356 32BF80             LDAA VAR_meteoCount1
-    8359 700E               CMP #14
-    835B 160387             JNC _RTS ;Previous data not complete
-    835E 20                 TAX
-    835F 1AD186             JSR getBitChar
-    8362 4310               STA (ZP_meteoWrite),X
-    8364 7DBF80             INCA VAR_meteoCount1        
-    8367 21                 TXA
-    8368 7029               CMP #41
-    836A 180387             JNZ _RTS
+    844B 32C680             LDAA VAR_meteoCount1
+    844E 700E               CMP #14
+    8450 169987             JNC hdlRTS ;Previous data not complete
+    8453 20                 TAX
+    8454 9A10               PUSH ZP_meteoRW ;Save ZP to stack
+    8456 09                 PHX
+    8457 6DC080             LPTA VAR_meteoWritePTR
+    845A 6F10               SPT ZP_meteoRW
+    845C 0D                 PLX
+    845D 1A5F88             JSR getBitChar
+    8460 4310               STA (ZP_meteoRW),X
+    8462 7DC680             INCA VAR_meteoCount1        
+    8465 21                 TXA
+    8466 7029               CMP #41
+    8468 197084             JPZ _getMeteo0
+    846B AA10               POP ZP_meteoRW ;Restore ZP from stack
+    846D 109987             JMP hdlRTS
+                
                             ;Last bit received
-    836D 2C                 CLA
-    836E 5052               LDX #82
-    8370 4310               STA (ZP_meteoWrite),X ;Terminate String with 0
-    8372 3008               LDA #08h
-    8374 E21080             ORAA VAR_dataOK
-    8377 421080             STAA VAR_dataOK
-    837A 5F12               LPT ZP_meteoRead ;Swap read and write register
-    837C 7A                 PHR
-    837D 5F10               LPT ZP_meteoWrite
-    837F 6F12               SPT ZP_meteoRead
-    8381 8A                 PLR
-    8382 6F10               SPT ZP_meteoWrite
+    8470 2C     _getMeteo0  CLA
+    8471 5052               LDX #82
+    8473 4310               STA (ZP_meteoRW),X ;Terminate String with 0
+    8475 3008               LDA #08h
+    8477 E21180             ORAA VAR_dataOK
+    847A 421180             STAA VAR_dataOK
+    847D 6DC080             LPTA VAR_meteoWritePTR ;Swap read and write register
+    8480 7A                 PHR
+    8481 6DC280             LPTA VAR_meteoReadPTR
+    8484 6EC080             SPTA VAR_meteoWritePTR
+    8487 8A                 PLR
+    8488 6EC280             SPTA VAR_meteoReadPTR
+                
+                ;fill data struct with meteo data (Zero terminated string)
+    848B 6F10               SPT ZP_meteoRW
+    848D 9A12               PUSH ZP_dataStructPTR ;Save ZP to stack
+    848F 6DC480             LPTA VAR_dataStructPTR
+    8492 6F12               SPT ZP_dataStructPTR
+    8494 500A               LDX #0Ah
+    8496 2E                 CLY
+    8497 3410   _tFill1     LDA (ZP_meteoRW),Y
+    8499 4312               STA (ZP_dataStructPTR),X
+    849B 7B                 INX
+    849C 8B                 INY
+    849D 605D               CPX #5Dh
+    849F 17A584             JPC _tFill2
+    84A2 109784             JMP _tFill1
+                
+                _tFill2
+    84A5 AA12               POP ZP_dataStructPTR ;Restore ZP from stack
+    84A7 AA10               POP ZP_meteoRW ;Restore ZP from stack
                 
                 ;DEBUG print meteo string
                 
-    8384 2FBF80 _gMet12     STZA VAR_meteoCount1 ;Reset bit counter
-    8387 2FC080             STZA VAR_meteoCount2 ;Reset bit counter            
-    838A 100387             JMP _RTS    
+    84A9 2FC680 _gMet12     STZA VAR_meteoCount1 ;Reset bit counter
+    84AC 2FC780             STZA VAR_meteoCount2 ;Reset bit counter            
+    84AF 109987             JMP hdlRTS    
                 
-    838D 321180 _gMet10     LDAA VAR_second ;Start minute (0, 3, 6, 9, ...)
-    8390 7001               CMP #1
-    8392 189B83             JNZ _gMet11 ;Bit > 1 -> Write to Array
-    8395 2FBF80             STZA VAR_meteoCount1 ;First minute & first bit -> Reset bit counter
-    8398 2FC080             STZA VAR_meteoCount2 ;First minute & first bit -> Reset bit counter
-    839B 1AD186 _gMet11     JSR getBitChar
-    839E 52BF80             LDXA VAR_meteoCount1
-    83A1 4310               STA (ZP_meteoWrite),X
-    83A3 7DBF80             INCA VAR_meteoCount1
-    83A6 100387             JMP _RTS        
+                ;Start minute (0, 3, 6, 9, ...)
+    84B2 321380 _gMet10     LDAA VAR_second
+    84B5 7001               CMP #1
+    84B7 18C084             JNZ _gMet11 ;Bit > 1 -> Write to Array
+    84BA 2FC680             STZA VAR_meteoCount1 ;First minute & first bit -> Reset bit counter
+    84BD 2FC780             STZA VAR_meteoCount2 ;First minute & first bit -> Reset bit counter
+    84C0 1A5F88 _gMet11     JSR getBitChar
+    84C3 9A10               PUSH ZP_meteoRW ;Save ZP to stack
+    84C5 6DC080             LPTA VAR_meteoWritePTR
+    84C8 6F10               SPT ZP_meteoRW
+    84CA 52C680             LDXA VAR_meteoCount1
+    84CD 4310               STA (ZP_meteoRW),X
+    84CF 7DC680             INCA VAR_meteoCount1
+    84D2 AA10               POP ZP_meteoRW ;Restore ZP from stack
+    84D4 109987             JMP hdlRTS       
                 
                 ;Get/decode minutes
                 ;---------------------------------------------------------
                 getMinutes   
-    83A9 701C               CMP #28
-    83AB 19E383             JPZ _gMet21 ;Last bit -> Check parity
-    83AE 7015               CMP #21
-    83B0 18C383             JNZ _gMet20
-    83B3 2F0E80             STZA VAR_bitCache+1    ;First bit -> Clear data
-    83B6 32BF80             LDAA VAR_meteoCount1
-    83B9 701C               CMP #28
-    83BB 18D683             JNZ _gMin0 ;Previous meteo data not complete
-    83BE 302A               LDA #42
-    83C0 42C080             STAA VAR_meteoCount2
+    84D7 701C               CMP #28
+    84D9 191A85             JPZ _gMet21 ;Last bit -> Check parity
+    84DC 7015               CMP #21
+    84DE 18F184             JNZ _gMet20
+    84E1 2F0D80             STZA VAR_bitCache+1    ;First bit -> Clear data
+    84E4 32C680             LDAA VAR_meteoCount1
+    84E7 701C               CMP #28
+    84E9 180D85             JNZ _gMin0 ;Previous meteo data not complete
+    84EC 302A               LDA #42
+    84EE 42C780             STAA VAR_meteoCount2
                 
                 ;*** Get meteo 1/2 ***
-    83C3 32BF80 _gMet20     LDAA VAR_meteoCount1
-    83C6 701C               CMP #28
-    83C8 18D683             JNZ _gMin0 ;Previous meteo data not complete
-    83CB 1AD186             JSR getBitChar
-    83CE 52C080             LDXA VAR_meteoCount2
-    83D1 4310               STA (ZP_meteoWrite),X
-    83D3 7DC080             INCA VAR_meteoCount2
+    84F1 32C680 _gMet20     LDAA VAR_meteoCount1
+    84F4 701C               CMP #28
+    84F6 180D85             JNZ _gMin0 ;Previous meteo data not complete
+    84F9 1A5F88             JSR getBitChar
+    84FC 9A10               PUSH ZP_meteoRW ;Save ZP to stack
+    84FE 6DC080             LPTA VAR_meteoWritePTR
+    8501 6F10               SPT ZP_meteoRW
+    8503 52C780             LDXA VAR_meteoCount2
+    8506 4310               STA (ZP_meteoRW),X
+    8508 7DC780             INCA VAR_meteoCount2
+    850B AA10               POP ZP_meteoRW ;Restore ZP from stack
                 
                 ;Get bit (minutes)
-    83D6 1AC486 _gMin0      JSR getBit
-    83D9 E20E80             ORAA VAR_bitCache+1
-    83DC DB                 SHR
-    83DD 420E80             STAA VAR_bitCache+1
-    83E0 100387             JMP _RTS
+    850D 321280 _gMin0      LDAA VAR_bitData
+    8510 E20D80             ORAA VAR_bitCache+1
+    8513 DB                 SHR
+    8514 420D80             STAA VAR_bitCache+1
+    8517 109987             JMP hdlRTS
                 
                 ;*** Get meteo 2/2 ***
-    83E3 32C080 _gMet21     LDAA VAR_meteoCount2
-    83E6 7031               CMP #49
-    83E8 18F383             JNZ parityMinutes ;Previous meteo data not complete
-    83EB 20                 TAX
-    83EC 3030               LDA #'0'
-    83EE 4310               STA (ZP_meteoWrite),X
-    83F0 7DC080             INCA VAR_meteoCount2
+    851A 32C780 _gMet21     LDAA VAR_meteoCount2
+    851D 7031               CMP #49
+    851F 183385             JNZ parityMinutes ;Previous meteo data not complete
+    8522 9A10               PUSH ZP_meteoRW ;Save ZP to stack
+    8524 6DC080             LPTA VAR_meteoWritePTR
+    8527 6F10               SPT ZP_meteoRW
+    8529 20                 TAX
+    852A 3030               LDA #'0'
+    852C 4310               STA (ZP_meteoRW),X
+    852E 7DC780             INCA VAR_meteoCount2
+    8531 AA10               POP ZP_meteoRW ;Restore ZP from stack
                 
                 ;Last bit
                 ;Check parity (minutes)        
                 parityMinutes  
-    83F3 1AC486             JSR getBit ;Get "Carry-Bit" and save it to stack for later use
-    83F6 08                 PHA
+    8533 321280             LDAA VAR_bitData ;Get "Carry-Bit" and save it to stack for later use
+    8536 08                 PHA
                             ;Determine if bitcount of data is even or odd
-    83F7 320E80             LDAA VAR_bitCache+1
-    83FA 5007               LDX #7
-    83FC 2E                 CLY
-    83FD 1ADF86             JSR bitCnt
-    8400 171284             JPC _pMin0   
-    8403 0C                 PLA ;Bit count = "odd"
-    8404 181684             JNZ _pMinOK
+    8537 320D80             LDAA VAR_bitCache+1
+    853A 5007               LDX #7
+    853C 2E                 CLY
+    853D 1A6D88             JSR bitCnt
+    8540 175285             JPC _pMin0   
+    8543 0C                 PLA ;Bit count = "odd"
+    8544 185685             JNZ _pMinOK
                 
-    8407 300E   _pMinBAD    LDA #00Eh ;Parity n.OK
-    8409 D21080             ANDA VAR_dataOK
-    840C 421080             STAA VAR_dataOK
+    8547 300E   _pMinBAD    LDA #00Eh ;Parity n.OK
+    8549 D21180             ANDA VAR_dataOK
+    854C 421180             STAA VAR_dataOK
                 
                 ;DEBUG print minutes parity failure            
                 
-    840F 100387             JMP _RTS
+    854F 109987             JMP hdlRTS
                 
-    8412 0C     _pMin0      PLA ;Bit count = "even"
-    8413 180784             JNZ _pMinBAD
+    8552 0C     _pMin0      PLA ;Bit count = "even"
+    8553 184785             JNZ _pMinBAD
                 
-    8416 320E80 _pMinOK     LDAA VAR_bitCache+1
-    8419 1AF386             JSR bcdToDec
-    841C 42C180             STAA VAR_tmpMinutes
-    841F 3001               LDA #01h
-    8421 E21080             ORAA VAR_dataOK
-    8424 421080             STAA VAR_dataOK
+    8556 320D80 _pMinOK     LDAA VAR_bitCache+1
+    8559 1A8188             JSR bcdToDec
+    855C 42C880             STAA VAR_tmpMinutes
+    855F 3001               LDA #01h
+    8561 E21180             ORAA VAR_dataOK
+    8564 421180             STAA VAR_dataOK
                 
                 ;DEBUG print minutes
-    8427 100387             JMP _RTS
+    8567 109987             JMP hdlRTS
                 
                 ;Get/decode hours
                 ;---------------------------------------------------------
                 getHours
-    842A 7023               CMP #35
-    842C 195784             JPZ _gMet31 ;Last bit -> Check parity
-    842F 701D               CMP #29
-    8431 183784             JNZ _gMet30
-    8434 2F0E80             STZA VAR_bitCache+1
+    856A 7023               CMP #35
+    856C 19A085             JPZ _gMet31 ;Last bit -> Check parity
+    856F 701D               CMP #29
+    8571 187785             JNZ _gMet30
+    8574 2F0D80             STZA VAR_bitCache+1
                 
                 ;*** Get meteo 1/2 ***
-    8437 32BF80 _gMet30     LDAA VAR_meteoCount1
-    843A 701C               CMP #28
-    843C 184A84             JNZ _gHrs0 ;Previous meteo data not complete
-    843F 1AD186             JSR getBitChar
-    8442 52C080             LDXA VAR_meteoCount2
-    8445 4310               STA (ZP_meteoWrite),X
-    8447 7DC080             INCA VAR_meteoCount2
+    8577 32C680 _gMet30     LDAA VAR_meteoCount1
+    857A 701C               CMP #28
+    857C 189385             JNZ _gHrs0 ;Previous meteo data not complete
+    857F 1A5F88             JSR getBitChar
+    8582 9A10               PUSH ZP_meteoRW ;Save ZP to stack
+    8584 6DC080             LPTA VAR_meteoWritePTR
+    8587 6F10               SPT ZP_meteoRW
+    8589 52C780             LDXA VAR_meteoCount2
+    858C 4310               STA (ZP_meteoRW),X
+    858E 7DC780             INCA VAR_meteoCount2
+    8591 AA10               POP ZP_meteoRW ;Restore ZP from stack
                 
                 ;Get bit (hours)
-    844A 1AC486 _gHrs0      JSR getBit
-    844D E20E80             ORAA VAR_bitCache+1
-    8450 DB                 SHR
-    8451 420E80             STAA VAR_bitCache+1
-    8454 100387             JMP _RTS
+    8593 321280 _gHrs0      LDAA VAR_bitData
+    8596 E20D80             ORAA VAR_bitCache+1
+    8599 DB                 SHR
+    859A 420D80             STAA VAR_bitCache+1
+    859D 109987             JMP hdlRTS
                 
                 ;*** Get meteo 2/2 ***
-    8457 32C080 _gMet31     LDAA VAR_meteoCount2
-    845A 7038               CMP #56
-    845C 186B84             JNZ parityHours ;Previous meteo data not complete
-    845F 20                 TAX
-    8460 3030               LDA #'0'
-    8462 4310               STA (ZP_meteoWrite),X ; 1. '0'
-    8464 7B                 INX
-    8465 4310               STA (ZP_meteoWrite),X ; 2. '0'
-    8467 7B                 INX
-    8468 55C080             STXA VAR_meteoCount2
+    85A0 32C780 _gMet31     LDAA VAR_meteoCount2
+    85A3 7038               CMP #56
+    85A5 18BD85             JNZ parityHours ;Previous meteo data not complete
+    85A8 9A10               PUSH ZP_meteoRW ;Save ZP to stack
+    85AA 6DC080             LPTA VAR_meteoWritePTR
+    85AD 6F10               SPT ZP_meteoRW
+    85AF 20                 TAX
+    85B0 3030               LDA #'0'
+    85B2 4310               STA (ZP_meteoRW),X ; 1. '0'
+    85B4 7B                 INX
+    85B5 4310               STA (ZP_meteoRW),X ; 2. '0'
+    85B7 7B                 INX
+    85B8 55C780             STXA VAR_meteoCount2
+    85BB AA10               POP ZP_meteoRW ;Restore ZP from stack
                 
                 ;Last bit
                 ;Check parity (hours)         
                 parityHours       
-    846B BD0E80             SHRA VAR_bitCache+1
-    846E 1AC486             JSR getBit ;Get "Carry-Bit" and save it to stack for later use
-    8471 08                 PHA
+    85BD BD0D80             SHRA VAR_bitCache+1
+    85C0 321280             LDAA VAR_bitData ;Get "Carry-Bit" and save it to stack for later use
+    85C3 08                 PHA
                             ;Determine if bitcount of data is even or odd
-    8472 320E80             LDAA VAR_bitCache+1
-    8475 5006               LDX #6
-    8477 2E                 CLY
-    8478 1ADF86             JSR bitCnt
-    847B 178D84             JPC _pHrs0   
-    847E 0C                 PLA ;Bit count = "odd"
-    847F 189184             JNZ _pHrsOK
+    85C4 320D80             LDAA VAR_bitCache+1
+    85C7 5006               LDX #6
+    85C9 2E                 CLY
+    85CA 1A6D88             JSR bitCnt
+    85CD 17DF85             JPC _pHrs0   
+    85D0 0C                 PLA ;Bit count = "odd"
+    85D1 18E385             JNZ _pHrsOK
                 
-    8482 300D   _pHrsBAD    LDA #00Dh ;Parity n.OK
-    8484 D21080             ANDA VAR_dataOK
-    8487 421080             STAA VAR_dataOK
+    85D4 300D   _pHrsBAD    LDA #00Dh ;Parity n.OK
+    85D6 D21180             ANDA VAR_dataOK
+    85D9 421180             STAA VAR_dataOK
                 
                 ;DEBUG print hours parity failure            
                 
-    848A 100387             JMP _RTS
+    85DC 109987             JMP hdlRTS
                 
-    848D 0C     _pHrs0      PLA ;Bit count = "even"
-    848E 188284             JNZ _pHrsBAD
+    85DF 0C     _pHrs0      PLA ;Bit count = "even"
+    85E0 18D485             JNZ _pHrsBAD
                 
-    8491 320E80 _pHrsOK     LDAA VAR_bitCache+1
-    8494 1AF386             JSR bcdToDec
-    8497 42C280             STAA VAR_tmpHours
-    849A 3002               LDA #02h
-    849C E21080             ORAA VAR_dataOK
-    849F 421080             STAA VAR_dataOK
+    85E3 320D80 _pHrsOK     LDAA VAR_bitCache+1
+    85E6 1A8188             JSR bcdToDec
+    85E9 42C980             STAA VAR_tmpHours
+    85EC 3002               LDA #02h
+    85EE E21180             ORAA VAR_dataOK
+    85F1 421180             STAA VAR_dataOK
                 
                 ;DEBUG print hours
-    84A2 100387             JMP _RTS
+    85F4 109987             JMP hdlRTS
                 
                 ;Get/decode day
                 ;---------------------------------------------------------
                 getDay  
-    84A5 7024               CMP #36 
-    84A7 18AD84             JNZ _gMet40
-    84AA 2F0E80             STZA VAR_bitCache+1
+    85F7 7024               CMP #36 
+    85F9 18FF85             JNZ _gMet40
+    85FC 2F0D80             STZA VAR_bitCache+1
                 
                 ;*** Get meteo 1/2 ***
-    84AD 32BF80 _gMet40     LDAA VAR_meteoCount1
-    84B0 701C               CMP #28
-    84B2 18C084             JNZ _gDay0 ;Previous meteo data not complete
-    84B5 1AD186             JSR getBitChar
-    84B8 52C080             LDXA VAR_meteoCount2
-    84BB 4310               STA (ZP_meteoWrite),X
-    84BD 7DC080             INCA VAR_meteoCount2
+    85FF 32C680 _gMet40     LDAA VAR_meteoCount1
+    8602 701C               CMP #28
+    8604 181B86             JNZ _gDay0 ;Previous meteo data not complete
+    8607 1A5F88             JSR getBitChar
+    860A 9A10               PUSH ZP_meteoRW ;Save ZP to stack
+    860C 6DC080             LPTA VAR_meteoWritePTR
+    860F 6F10               SPT ZP_meteoRW
+    8611 52C780             LDXA VAR_meteoCount2
+    8614 4310               STA (ZP_meteoRW),X
+    8616 7DC780             INCA VAR_meteoCount2
+    8619 AA10               POP ZP_meteoRW ;Restore ZP from stack
                 
                 ;Get bit (day)      
-    84C0 1AC486 _gDay0      JSR getBit
-    84C3 E20E80             ORAA VAR_bitCache+1
-    84C6 DB                 SHR
-    84C7 420E80             STAA VAR_bitCache+1
+    861B 321280 _gDay0      LDAA VAR_bitData
+    861E E20D80             ORAA VAR_bitCache+1
+    8621 DB                 SHR
+    8622 420D80             STAA VAR_bitCache+1
                             ;Check for last bit
-    84CA 321180             LDAA VAR_second
-    84CD 7029               CMP #41       
-    84CF 180387             JNZ _RTS 
+    8625 321380             LDAA VAR_second
+    8628 7029               CMP #41       
+    862A 189987             JNZ hdlRTS 
                 
                 ;*** Get meteo 2/2 ***
-    84D2 32C080             LDAA VAR_meteoCount2
-    84D5 7040               CMP #64
-    84D7 18E784             JNZ _gDay1 ;Previous meteo data not complete
-    84DA 20                 TAX
-    84DB 3030               LDA #'0'
-    84DD 4310               STA (ZP_meteoWrite),X ; 1. '0'
-    84DF 7B                 INX
-    84E0 4310               STA (ZP_meteoWrite),X ; 2. '0'
-    84E2 3047               LDA #71
-    84E4 42C080             STAA VAR_meteoCount2          
+    862D 32C780             LDAA VAR_meteoCount2
+    8630 7040               CMP #64
+    8632 184B86             JNZ _gDay1 ;Previous meteo data not complete
+    8635 9A10               PUSH ZP_meteoRW ;Save ZP to stack
+    8637 6DC080             LPTA VAR_meteoWritePTR
+    863A 6F10               SPT ZP_meteoRW
+    863C 20                 TAX
+    863D 3030               LDA #'0'
+    863F 4310               STA (ZP_meteoRW),X ; 1. '0'
+    8641 7B                 INX
+    8642 4310               STA (ZP_meteoRW),X ; 2. '0'
+    8644 3047               LDA #71
+    8646 42C780             STAA VAR_meteoCount2  
+    8649 AA10               POP ZP_meteoRW ;Restore ZP from stack
                 
                 ;Last bit
-    84E7 BD0E80 _gDay1      SHRA VAR_bitCache+1
+    864B BD0D80 _gDay1      SHRA VAR_bitCache+1
                             ;Count high bits and add it to "VAR_dateParity"
-    84EA 320E80             LDAA VAR_bitCache+1
-    84ED 5006               LDX #6
-    84EF 2E                 CLY
-    84F0 1ADF86             JSR bitCnt
-    84F3 421880             STAA VAR_dateParity
+    864E 320D80             LDAA VAR_bitCache+1
+    8651 5006               LDX #6
+    8653 2E                 CLY
+    8654 1A6D88             JSR bitCnt
+    8657 420F80             STAA VAR_dateParity
                             ;Save day value
-    84F6 320E80             LDAA VAR_bitCache+1
-    84F9 1AF386             JSR bcdToDec
-    84FC 42C380             STAA VAR_tmpDay
+    865A 320D80             LDAA VAR_bitCache+1
+    865D 1A8188             JSR bcdToDec
+    8660 42CA80             STAA VAR_tmpDay
                 
                 ;DEBUG print day
-    84FF 100387             JMP _RTS        
+    8663 109987             JMP hdlRTS      
                 
                 ;Get/decode weekday
                 ;---------------------------------------------------------
                 getWDay 
-    8502 702A               CMP #42
-    8504 180A85             JNZ _gMet50
-    8507 2F0E80             STZA VAR_bitCache+1
+    8666 702A               CMP #42
+    8668 186E86             JNZ _gMet50
+    866B 2F0D80             STZA VAR_bitCache+1
                 
                 ;*** Get meteo 1/2 ***
-    850A 32BF80 _gMet50     LDAA VAR_meteoCount1
-    850D 701C               CMP #28
-    850F 181D85             JNZ _getWDay0 ;Previous meteo data not complete
-    8512 1AD186             JSR getBitChar
-    8515 52C080             LDXA VAR_meteoCount2
-    8518 4310               STA (ZP_meteoWrite),X
-    851A 7DC080             INCA VAR_meteoCount2
+    866E 32C680 _gMet50     LDAA VAR_meteoCount1
+    8671 701C               CMP #28
+    8673 188A86             JNZ _getWDay0 ;Previous meteo data not complete
+    8676 1A5F88             JSR getBitChar
+    8679 9A10               PUSH ZP_meteoRW ;Save ZP to stack
+    867B 6DC080             LPTA VAR_meteoWritePTR
+    867E 6F10               SPT ZP_meteoRW
+    8680 52C780             LDXA VAR_meteoCount2
+    8683 4310               STA (ZP_meteoRW),X
+    8685 7DC780             INCA VAR_meteoCount2
+    8688 AA10               POP ZP_meteoRW ;Restore ZP from stack
                 
                 ;Get bit (weekday)    
-    851D 1AC486 _getWDay0   JSR getBit
-    8520 E20E80             ORAA VAR_bitCache+1
-    8523 DB                 SHR
-    8524 420E80             STAA VAR_bitCache+1
+    868A 321280 _getWDay0   LDAA VAR_bitData
+    868D E20D80             ORAA VAR_bitCache+1
+    8690 DB                 SHR
+    8691 420D80             STAA VAR_bitCache+1
                             ;Check for last bit
-    8527 321180             LDAA VAR_second
-    852A 702C               CMP #44       
-    852C 180387             JNZ _RTS
+    8694 321380             LDAA VAR_second
+    8697 702C               CMP #44       
+    8699 189987             JNZ hdlRTS
                 
                 ;*** Get meteo 2/2 ***
-    852F 32C080             LDAA VAR_meteoCount2
-    8532 704A               CMP #74
-    8534 183C85             JNZ _getWDay1 ;Previous meteo data not complete
-    8537 3042               LDA #66
-    8539 42C080             STAA VAR_meteoCount2
+    869C 32C780             LDAA VAR_meteoCount2
+    869F 704A               CMP #74
+    86A1 18A986             JNZ _getWDay1 ;Previous meteo data not complete
+    86A4 3042               LDA #66
+    86A6 42C780             STAA VAR_meteoCount2
                 
                 ;Last bit
                             ;Shift data right by 4
-    853C 320E80 _getWDay1   LDAA VAR_bitCache+1
-    853F B010               DIV #10h
-    8541 420E80             STAA VAR_bitCache+1
+    86A9 320D80 _getWDay1   LDAA VAR_bitCache+1
+    86AC B010               DIV #10h
+    86AE 420D80             STAA VAR_bitCache+1
                 
                             ;Count high bits and add it to "VAR_dateParity"
-    8544 5003               LDX #3
-    8546 591880             LDYA VAR_dateParity
-    8549 1ADF86             JSR bitCnt
-    854C 421880             STAA VAR_dateParity
+    86B1 5003               LDX #3
+    86B3 590F80             LDYA VAR_dateParity
+    86B6 1A6D88             JSR bitCnt
+    86B9 420F80             STAA VAR_dateParity
                             ;Save weekday value
-    854F 320E80             LDAA VAR_bitCache+1
-    8552 1AF386             JSR bcdToDec
-    8555 42C480             STAA VAR_tmpWeekday
+    86BC 320D80             LDAA VAR_bitCache+1
+    86BF 1A8188             JSR bcdToDec
+    86C2 42CB80             STAA VAR_tmpWeekday
                 
                 ;DEBUG print weekday
                 
-    8558 100387             JMP _RTS  
+    86C5 109987             JMP hdlRTS 
                 
                 ;Get/decode month
                 ;---------------------------------------------------------
                 getMonth    
-    855B 702D               CMP #45
-    855D 186385             JNZ _gMet60
-    8560 2F0E80             STZA VAR_bitCache+1
+    86C8 702D               CMP #45
+    86CA 18D086             JNZ _gMet60
+    86CD 2F0D80             STZA VAR_bitCache+1
                 
                 ;*** Get meteo ***
-    8563 32BF80 _gMet60     LDAA VAR_meteoCount1
-    8566 701C               CMP #28
-    8568 187685             JNZ _gMon0 ;Previous meteo data not complete
-    856B 1AD186             JSR getBitChar
-    856E 52C080             LDXA VAR_meteoCount2
-    8571 4310               STA (ZP_meteoWrite),X
-    8573 7DC080             INCA VAR_meteoCount2
+    86D0 32C680 _gMet60     LDAA VAR_meteoCount1
+    86D3 701C               CMP #28
+    86D5 18EC86             JNZ _gMon0 ;Previous meteo data not complete
+    86D8 1A5F88             JSR getBitChar
+    86DB 9A10               PUSH ZP_meteoRW ;Save ZP to stack
+    86DD 6DC080             LPTA VAR_meteoWritePTR
+    86E0 6F10               SPT ZP_meteoRW
+    86E2 52C780             LDXA VAR_meteoCount2
+    86E5 4310               STA (ZP_meteoRW),X
+    86E7 7DC780             INCA VAR_meteoCount2
+    86EA AA10               POP ZP_meteoRW ;Restore ZP from stack
                 
                 ;Get bit (month)
-    8576 1AC486 _gMon0      JSR getBit
-    8579 E20E80             ORAA VAR_bitCache+1
-    857C DB                 SHR
-    857D 420E80             STAA VAR_bitCache+1            
+    86EC 321280 _gMon0      LDAA VAR_bitData
+    86EF E20D80             ORAA VAR_bitCache+1
+    86F2 DB                 SHR
+    86F3 420D80             STAA VAR_bitCache+1            
                             ;Check for last bit
-    8580 321180             LDAA VAR_second
-    8583 7031               CMP #49       
-    8585 180387             JNZ _RTS 
+    86F6 321380             LDAA VAR_second
+    86F9 7031               CMP #49       
+    86FB 189987             JNZ hdlRTS 
                 
                 ;*** Get meteo 2/2 ***
-    8588 32C080             LDAA VAR_meteoCount2
-    858B 7047               CMP #71
-    858D 189585             JNZ _gMon1 ;Previous meteo data not complete
-    8590 304A               LDA #74
-    8592 42C080             STAA VAR_meteoCount2
+    86FE 32C780             LDAA VAR_meteoCount2
+    8701 7047               CMP #71
+    8703 180B87             JNZ _gMon1 ;Previous meteo data not complete
+    8706 304A               LDA #74
+    8708 42C780             STAA VAR_meteoCount2
                 
                 ;Last bit
                             ;Shift data right by 2
-    8595 BD0E80 _gMon1      SHRA VAR_bitCache+1
-    8598 BD0E80             SHRA VAR_bitCache+1
+    870B BD0D80 _gMon1      SHRA VAR_bitCache+1
+    870E BD0D80             SHRA VAR_bitCache+1
                 
                             ;Count high bits and add it to "VAR_dateParity"
-    859B 320E80             LDAA VAR_bitCache+1
-    859E 5005               LDX #5
-    85A0 591880             LDYA VAR_dateParity
-    85A3 1ADF86             JSR bitCnt
-    85A6 421880             STAA VAR_dateParity
+    8711 320D80             LDAA VAR_bitCache+1
+    8714 5005               LDX #5
+    8716 590F80             LDYA VAR_dateParity
+    8719 1A6D88             JSR bitCnt
+    871C 420F80             STAA VAR_dateParity
                             ;Save month value
-    85A9 320E80             LDAA VAR_bitCache+1
-    85AC 1AF386             JSR bcdToDec
-    85AF 42C580             STAA VAR_tmpMonth
+    871F 320D80             LDAA VAR_bitCache+1
+    8722 1A8188             JSR bcdToDec
+    8725 42CC80             STAA VAR_tmpMonth
                 
                 ;DEBUG print month
                 
-    85B2 100387             JMP _RTS 
+    8728 109987             JMP hdlRTS
                 
                 ;Get/decode year
                 ;---------------------------------------------------------
                 getYear     
-    85B5 703A               CMP #58
-    85B7 19E485             JPZ parityDate ;Last bit -> Check parity
-    85BA 7032               CMP #50
-    85BC 18C285             JNZ _gMet70
-    85BF 2F0E80             STZA VAR_bitCache+1
+    872B 703A               CMP #58
+    872D 196387             JPZ parityDate ;Last bit -> Check parity
+    8730 7032               CMP #50
+    8732 183887             JNZ _gMet70
+    8735 2F0D80             STZA VAR_bitCache+1
                 
                 ;*** Get meteo ***
-    85C2 32BF80 _gMet70     LDAA VAR_meteoCount1
-    85C5 701C               CMP #28
-    85C7 18D585             JNZ _gYear0 ;Previous data not complete
-    85CA 1AD186             JSR getBitChar
-    85CD 52C080             LDXA VAR_meteoCount2
-    85D0 4310               STA (ZP_meteoWrite),X
-    85D2 7DC080             INCA VAR_meteoCount2
+    8738 32C680 _gMet70     LDAA VAR_meteoCount1
+    873B 701C               CMP #28
+    873D 185487             JNZ _gYear0 ;Previous data not complete
+    8740 9A10               PUSH ZP_meteoRW ;Save ZP to stack
+    8742 6DC080             LPTA VAR_meteoWritePTR
+    8745 6F10               SPT ZP_meteoRW
+    8747 1A5F88             JSR getBitChar
+    874A 52C780             LDXA VAR_meteoCount2
+    874D 4310               STA (ZP_meteoRW),X
+    874F 7DC780             INCA VAR_meteoCount2
+    8752 AA10               POP ZP_meteoRW ;Restore ZP from stack
                 
                 ;Get bit (year)
-    85D5 BD0E80 _gYear0     SHRA VAR_bitCache+1
-    85D8 1AC486             JSR getBit
-    85DB E20E80             ORAA VAR_bitCache+1
-    85DE 420E80             STAA VAR_bitCache+1
-    85E1 100387             JMP _RTS
+    8754 BD0D80 _gYear0     SHRA VAR_bitCache+1
+    8757 321280             LDAA VAR_bitData
+    875A E20D80             ORAA VAR_bitCache+1
+    875D 420D80             STAA VAR_bitCache+1
+    8760 109987             JMP hdlRTS
                 
                 ;Last bit
                 ;Check parity for whole date (Day, weekday, month, year)         
                 parityDate
-    85E4 1AC486             JSR getBit ;Get "Carry-Bit" and save it to stack for later use
-    85E7 08                 PHA
+    8763 321280             LDAA VAR_bitData ;Get "Carry-Bit" and save it to stack for later use
+    8766 08                 PHA
                             ;Count high bits and add it to "VAR_dateParity"
                             ;Determine if bitcount of "VAR_dateParity" is even or odd
-    85E8 320E80             LDAA VAR_bitCache+1
-    85EB 5008               LDX #8
-    85ED 591880             LDYA VAR_dateParity
-    85F0 1ADF86             JSR bitCnt
-    85F3 170586             JPC _pDat0
-    85F6 0C                 PLA ;Bit count = "odd" 
-    85F7 180986             JNZ _pDateOK
+    8767 320D80             LDAA VAR_bitCache+1
+    876A 5008               LDX #8
+    876C 590F80             LDYA VAR_dateParity
+    876F 1A6D88             JSR bitCnt
+    8772 178487             JPC _pDat0
+    8775 0C                 PLA ;Bit count = "odd" 
+    8776 188887             JNZ _pDateOK
                 
-    85FA 300B   _pDateBAD   LDA #00Bh ;Partity n.OK
-    85FC D21080             ANDA VAR_dataOK
-    85FF 421080             STAA VAR_dataOK
+    8779 300B   _pDateBAD   LDA #00Bh ;Partity n.OK
+    877B D21180             ANDA VAR_dataOK
+    877E 421180             STAA VAR_dataOK
                 
                 ;DEBUG print hours parity failure            
                 
-    8602 100387             JMP _RTS
+    8781 109987             JMP hdlRTS
                 
-    8605 0C     _pDat0      PLA ;Bit count = "even"
-    8606 18FA85             JNZ _pDateBAD
+    8784 0C     _pDat0      PLA ;Bit count = "even"
+    8785 187987             JNZ _pDateBAD
                 
-    8609 320E80 _pDateOK    LDAA VAR_bitCache+1
-    860C 1AF386             JSR bcdToDec
-    860F 42C680             STAA VAR_tmpYear ;Save year value
-    8612 3004               LDA #04h
-    8614 E21080             ORAA VAR_dataOK
-    8617 421080             STAA VAR_dataOK
+    8788 320D80 _pDateOK    LDAA VAR_bitCache+1
+    878B 1A8188             JSR bcdToDec
+    878E 42CD80             STAA VAR_tmpYear ;Save year value
+    8791 3004               LDA #04h
+    8793 E21180             ORAA VAR_dataOK
+    8796 421180             STAA VAR_dataOK
                 
                 ;DEBUG print year
                 
-    861A 100387             JMP _RTS
+                ;Add data to struct in RAM
+    8799 9A12   hdlRTS      PUSH ZP_dataStructPTR ;Save ZP to stack
+    879B 6DC480             LPTA VAR_dataStructPTR
+    879E 6F12               SPT ZP_dataStructPTR
+    87A0 5001               LDX #01h ;VAR_dataOK
+    87A2 351080             LDA START_DATA_STRUCT,X
+    87A5 4312               STA (ZP_dataStructPTR),X 
+    87A7 AA12               POP ZP_dataStructPTR
                 
-                ;Decoding end
-                ;---------------------------------------------------------
+                ;Start application handler chain
+    87A9 32E280             LDAA VAR_HDLCount
+    87AC 199188             JPZ _RTS ;No handler registered
                 
-                ;DEBUG print interference sign
-    861D 1F                 RTS
+    87AF 2D                 CLX
+    87B0 35E980 _hdl0       LDA VAR_HDLbitmaskEN,X
+    87B3 18BF87             JNZ _hdl1
+    87B6 7B     _hdl2       INX
+    87B7 6006               CPX #PAR_HDLMax
+    87B9 179188             JPC _RTS ;End of handler chain
+    87BC 10B087             JMP _hdl0
+                
+    87BF 21     _hdl1       TXA
+    87C0 42EF80             STAA VAR_HDLPTR ;Current active handler No.
+    87C3 CB                 SHL
+    87C4 20                 TAX
+                
+                ;call handler-routines in ROM
+    87C5 59EF80             LDYA VAR_HDLPTR
+    87C8 36DC80             LDA VAR_tabHDLROMPAGE,Y
+    87CB 08                 PHA
+    87CC 35D180             LDA VAR_tabHANDLER+1,X
+    87CF 08                 PHA
+    87D0 35D080             LDA VAR_tabHANDLER,X
+    87D3 08                 PHA
+                
+    87D4 1BB802             JSR (KERN_CALLFROMROM)
+                
+    87D7 32EF80 _exitint    LDAA VAR_HDLPTR
+    87DA 20                 TAX
+    87DB 10B687             JMP _hdl2 ;Next handler
+                
+    87DE 1F                 RTS
+                
+                ;END - Idle function
+                ;<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
                 
                 ;--------------------------------------------------------- 
                 ;Display snyc/data status on Multi-I/O LEDs   
                 ;---------------------------------------------------------
                 syncDisp
                 ;Display synced status           
-    861E 320B80             LDAA FLG_synced
-    8621 192F86             JPZ _syncD0
-    8624 3008               LDA #08h 
-    8626 F2C780             EORA VAR_ledsDataOK
-    8629 42C780             STAA VAR_ledsDataOK
-    862C 108786             JMP _syncD4
-    862F 3008   _syncD0     LDA #08h 
-    8631 E2C780             ORAA VAR_ledsDataOK
-    8634 42C780             STAA VAR_ledsDataOK
+    87DF 321080             LDAA FLG_synced
+    87E2 19F087             JPZ _syncD0
+    87E5 3008               LDA #08h 
+    87E7 F2CE80             EORA VAR_ledsDataOK
+    87EA 42CE80             STAA VAR_ledsDataOK
+    87ED 104888             JMP _syncD4
+    87F0 3008   _syncD0     LDA #08h 
+    87F2 E2CE80             ORAA VAR_ledsDataOK
+    87F5 42CE80             STAA VAR_ledsDataOK
                 
-    8637 321180             LDAA VAR_second
-    863A 7015               CMP #21
-    863C 168786             JNC _syncD4 ;Second <21 -> No time information fetching
-    863F 701D               CMP #29
-    8641 165186             JNC _syncD1 ;Second >= 21 & <29 -> Fetching minutes
-    8644 7024               CMP #36
-    8646 166486             JNC _syncD2 ;Second >= 29 & < 36 -> Fetching hours
-    8649 703B               CMP #59
-    864B 167786             JNC _syncD3 ;Second >= 36 & < 59 -> Fetching date
-    864E 108786             JMP _syncD4
+    87F8 321380             LDAA VAR_second
+    87FB 7015               CMP #21
+    87FD 164888             JNC _syncD4 ;Second <21 -> No time information fetching
+    8800 701D               CMP #29
+    8802 161288             JNC _syncD1 ;Second >= 21 & <29 -> Fetching minutes
+    8805 7024               CMP #36
+    8807 162588             JNC _syncD2 ;Second >= 29 & < 36 -> Fetching hours
+    880A 703B               CMP #59
+    880C 163888             JNC _syncD3 ;Second >= 36 & < 59 -> Fetching date
+    880F 104888             JMP _syncD4
                 
                 ;Fetching minutes
-    8651 321080 _syncD1     LDAA VAR_dataOK
-    8654 D001               AND #01h
-    8656 188786             JNZ _syncD4
-    8659 3001               LDA #01h 
-    865B F2C780             EORA VAR_ledsDataOK
-    865E 42C780             STAA VAR_ledsDataOK
-    8661 108786             JMP _syncD4
+    8812 321180 _syncD1     LDAA VAR_dataOK
+    8815 D001               AND #01h
+    8817 184888             JNZ _syncD4
+    881A 3001               LDA #01h 
+    881C F2CE80             EORA VAR_ledsDataOK
+    881F 42CE80             STAA VAR_ledsDataOK
+    8822 104888             JMP _syncD4
                 
                 ;Fetching hours
-    8664 321080 _syncD2     LDAA VAR_dataOK
-    8667 D002               AND #02h
-    8669 188786             JNZ _syncD4
-    866C 3002               LDA #02h 
-    866E F2C780             EORA VAR_ledsDataOK
-    8671 42C780             STAA VAR_ledsDataOK
-    8674 108786             JMP _syncD4
+    8825 321180 _syncD2     LDAA VAR_dataOK
+    8828 D002               AND #02h
+    882A 184888             JNZ _syncD4
+    882D 3002               LDA #02h 
+    882F F2CE80             EORA VAR_ledsDataOK
+    8832 42CE80             STAA VAR_ledsDataOK
+    8835 104888             JMP _syncD4
                 
                 ;Fetching date 
-    8677 321080 _syncD3     LDAA VAR_dataOK
-    867A D004               AND #04h
-    867C 188786             JNZ _syncD4
-    867F 3004               LDA #04h 
-    8681 F2C780             EORA VAR_ledsDataOK
-    8684 42C780             STAA VAR_ledsDataOK
+    8838 321180 _syncD3     LDAA VAR_dataOK
+    883B D004               AND #04h
+    883D 184888             JNZ _syncD4
+    8840 3004               LDA #04h 
+    8842 F2CE80             EORA VAR_ledsDataOK
+    8845 42CE80             STAA VAR_ledsDataOK
                 
-    8687 321080 _syncD4     LDAA VAR_dataOK
-    868A E2C780             ORAA VAR_ledsDataOK
-    868D 1B0603             JSR (KERN_IOCHANGELED)
-    8690 1F                 RTS
+    8848 321180 _syncD4     LDAA VAR_dataOK
+    884B E2CE80             ORAA VAR_ledsDataOK
+    884E 1B0603             JSR (KERN_IOCHANGELED)
+    8851 1F                 RTS
                 
                 
                 ;--------------------------------------------------------- 
                 ;Display snyc/data status on SCC-Board   
                 ;---------------------------------------------------------
-                sccBoard
-                ;Receiver not synced (LED off)           
-    8691 320B80             LDAA FLG_synced
-    8694 19A886             JPZ _sccB0
-    8697 320030             LDAA HDW_SCC_BOARD
-    869A D004               AND #04h
-    869C 190387             JPZ _RTS
-    869F 320030             LDAA HDW_SCC_BOARD
-    86A2 F004               EOR #04h
-    86A4 420030             STAA HDW_SCC_BOARD
-    86A7 1F                 RTS
-                
-                ;Receiver synced but no data available (Toggle LED)
-    86A8 321080 _sccB0      LDAA VAR_dataOK
-    86AB D007               AND #07h
-    86AD 7007               CMP #07h
-    86AF 19BB86             JPZ _sccB1
-    86B2 320030             LDAA HDW_SCC_BOARD
-    86B5 F004               EOR #04h
-    86B7 420030             STAA HDW_SCC_BOARD
-    86BA 1F                 RTS
-                
-                ;Receiver synced and data available (LED on)         
-    86BB 320030 _sccB1      LDAA HDW_SCC_BOARD
-    86BE E004               ORA #04h
-    86C0 420030             STAA HDW_SCC_BOARD
-    86C3 1F                 RTS     
                 
                 ;--------------------------------------------------------- 
                 ;Helper functions   
                 ;---------------------------------------------------------
                 
-                ;Get bit information from Time (Output: A = High(80h), Low(00h))        
+                ;Get bit information from second (Output: A = High(80h), Low(00h))        
                 getBit      
-    86C4 320D80             LDAA VAR_bitCache
-    86C7 7005               CMP #PARAM_LOWHIGH
-    86C9 16CF86             JNC _gBit0
+    8852 320C80             LDAA VAR_bitCache
+    8855 7005               CMP #PARAM_LOWHIGH
+    8857 165D88             JNC _gBit0
                             ;Time >= PARAM_LOWHIGH -> Bit = 1
-    86CC 3080               LDA #80h
-    86CE 4D                 SKA
-    86CF 2C     _gBit0      CLA ;Time < PARAM_LOWHIGH -> Bit = 0
-    86D0 1F                 RTS
+    885A 3080               LDA #80h
+    885C 4D                 SKA
+    885D 2C     _gBit0      CLA ;Time < PARAM_LOWHIGH -> Bit = 0
+    885E 1F                 RTS
                 
-                ;Get bit information from Time as Char (Output: A = Char)        
+                ;Get bit information from second as Char (Output: A = Char)        
                 getBitChar      
-    86D1 320D80             LDAA VAR_bitCache
-    86D4 7005               CMP #PARAM_LOWHIGH
-    86D6 16DC86             JNC _gBitC0
+    885F 320C80             LDAA VAR_bitCache
+    8862 7005               CMP #PARAM_LOWHIGH
+    8864 166A88             JNC _gBitC0
                             ;Time >= PARAM_LOWHIGH -> Bit = 1
-    86D9 3031               LDA #'1'
-    86DB 4E                 SKB
-    86DC 3030   _gBitC0     LDA #'0' ;Time < PARAM_LOWHIGH -> Bit = 0
-    86DE 1F                 RTS
+    8867 3031               LDA #'1'
+    8869 4E                 SKB
+    886A 3030   _gBitC0     LDA #'0' ;Time < PARAM_LOWHIGH -> Bit = 0
+    886C 1F                 RTS
                 
                 ;Count high bits
                 ;Input: A = Byte, X = Number of bits, Y = Counter offset
                 ;Output: A = Counter value, Carry = 0 -> odd, Carry = 1 -> even
                 bitCnt
-    86DF DB     _bCnt0      SHR
-    86E0 16E486             JNC _bCnt1
-    86E3 8B                 INY
-    86E4 49DF86 _bCnt1      DXJP _bCnt0
-    86E7 29                 SAY
-    86E8 08                 PHA
-    86E9 C002               MOD #2
-    86EB 19F086             JPZ _bCnt2
-    86EE 04                 CLC ;Counter value "odd"
-    86EF 4D                 SKA
-    86F0 05     _bCnt2      SEC ;Counter value "even"
-    86F1 0C                 PLA
-    86F2 1F                 RTS
+    886D DB     _bCnt0      SHR
+    886E 167288             JNC _bCnt1
+    8871 8B                 INY
+    8872 496D88 _bCnt1      DXJP _bCnt0
+    8875 29                 SAY
+    8876 08                 PHA
+    8877 C002               MOD #2
+    8879 197E88             JPZ _bCnt2
+    887C 04                 CLC ;Counter value "odd"
+    887D 4D                 SKA
+    887E 05     _bCnt2      SEC ;Counter value "even"
+    887F 0C                 PLA
+    8880 1F                 RTS
                 
                 ;Convert BCD to decimal (Input: A = BCD value) (Output: A = decimal vlaue)      
                 bcdToDec
-    86F3 08                 PHA
-    86F4 B010               DIV #10h
-    86F6 A00A               MUL #00Ah
-    86F8 420E80             STAA VAR_bitCache+1
-    86FB 0C                 PLA
-    86FC D00F               AND #00Fh
-    86FE 04                 CLC
-    86FF 820E80             ADCA VAR_bitCache+1
-    8702 1F                 RTS
+    8881 08                 PHA
+    8882 B010               DIV #10h
+    8884 A00A               MUL #00Ah
+    8886 420D80             STAA VAR_bitCache+1
+    8889 0C                 PLA
+    888A D00F               AND #00Fh
+    888C 04                 CLC
+    888D 820D80             ADCA VAR_bitCache+1
+    8890 1F                 RTS
                 
                 _RTS    
-    8703 04                 CLC
-    8704 1F                 RTS
+    8891 04                 CLC
+    8892 1F                 RTS
                 
                 _failRTS
-    8705 2C                 CLA
-    8706 05                 SEC
-    8707 1F                 RTS
+    8893 2C                 CLA
+    8894 05                 SEC
+    8895 1F                 RTS
                 
                 
 
@@ -1262,7 +1548,7 @@ Segment Table:
 **************
 Segment Name                 Startaddr  Endaddr     Size  Type
 =========================================================================
-default                           8000     8707      708  CODE  fixed
+default                           8000     8895      896  CODE  fixed
 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 No errors found.
