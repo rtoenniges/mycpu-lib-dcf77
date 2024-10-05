@@ -72,16 +72,17 @@ START_DATA_STRUCT
 FLG_synced          DB  1   ;00h | Sync flag -> 0 if synchron with dcf77
 VAR_dataOK          DB  0   ;01h | Parity check -> Bit 0 = Minutes OK, Bit 1 = Hours OK, Bit 2 = Date OK, Bit 3 = Meteo OK
 VAR_bitData         DB  0   ;02h | Bit data '0->00h' or '1->80h' of current second
+VAR_addInfo         DB  0, 0, 0, 0, 0   ;03h - 07h | Additional infos 1 or 0 (03h = Callbit, 04h = Switch MEZ/MESZ, 05h = MESZ, 06h = MEZ, 07h = Leap second)
 
-VAR_second          DB  0FFh ;03h | DCF77-Second/Bit counter
-VAR_minutes         DB  0FFh ;04h
-VAR_hours           DB  0FFh ;05h
+VAR_second          DB  0FFh ;08h | DCF77-Second/Bit counter
+VAR_minutes         DB  0FFh ;09h
+VAR_hours           DB  0FFh ;0Ah
 
-VAR_day             DB  0FFh ;06h
-VAR_weekday         DB  0FFh ;07h
-VAR_month           DB  0FFh ;08h
-VAR_year            DB  0FFh ;09h                          
-END_DATA_STRUCT ; + Meteo data -> 0Ah - 5Dh 
+VAR_day             DB  0FFh ;0Bh
+VAR_weekday         DB  0FFh ;0Ch
+VAR_month           DB  0FFh ;0Dh
+VAR_year            DB  0FFh ;0Eh                   
+END_DATA_STRUCT ; + Meteo data -> 0Fh - 62h 
 
 PAR_DATA_SIZE       EQU END_DATA_STRUCT - START_DATA_STRUCT + 83
 
@@ -372,14 +373,15 @@ func_getROMPage
 ;   Byte 0 = Sync flag -> 0 if synchron with dcf77
 ;   Byte 1 = Parity check -> Bit 1 = Minutes OK, Bit 2 = Hours OK, Bit 3 = Date OK, Bit 4 = Meteo OK
 ;   Byte 2 = Bit data 0 or 1 for current second
-;   Byte 3 = Second
-;   Byte 4 = Minute
-;   Byte 5 = Hour
-;   Byte 6 = Day
-;   Byte 7 = Weekday
-;   Byte 8 = Month
-;   Byte 9 = Year
-;   Byte 10 - 92 = Meteo data (Zero terminated bit string)
+;   Byte 3 - 7 = Additional infos 1 or 0 (03h = Callbit, 04h = Switch MEZ/MESZ, 05h = MESZ, 06h = MEZ, 07h = Leap second)
+;   Byte 8 = Second
+;   Byte 9 = Minute
+;   Byte 10 = Hour
+;   Byte 11 = Day
+;   Byte 12 = Weekday
+;   Byte 13 = Month
+;   Byte 14 = Year
+;   Byte 15 - 97 = Meteo data (Zero terminated bit string)
 func_getDataStruct
             LPTA VAR_dataStructPTR
             SAY
@@ -509,7 +511,7 @@ _rInt2      CMP #PARAM_SECOND
 _rInt5      PUSH ZP_dataStructPTR ;Save ZP to stack
             LPTA VAR_dataStructPTR
             SPT ZP_dataStructPTR
-            LDX #03h
+            LDX #08h
             LDAA VAR_second
             STA (ZP_dataStructPTR),X ;Add second to struct in RAM
             POP ZP_dataStructPTR ;Restore ZP from stack
@@ -675,7 +677,7 @@ _dbg1   JSR (KERN_PRINTCHAR)
             STAA VAR_minutes
             TAX
             PHX
-            LDX #04h
+            LDX #09h
             LDA START_DATA_STRUCT,X
             STA (ZP_dataStructPTR),X ;Add minutes to data struct in RAM
 _nBit1      LDAA VAR_dataOK
@@ -683,7 +685,7 @@ _nBit1      LDAA VAR_dataOK
             JPZ _nBit2
             LDAA VAR_tmpHours
             STAA VAR_hours ;Take over 'hours'
-            LDX #05h
+            LDX #0Ah
             LDA START_DATA_STRUCT,X
             STA (ZP_dataStructPTR),X ;Add hours to data struct in RAM
             PLX
@@ -726,11 +728,11 @@ _nBit2      POP ZP_dataStructPTR ;Restore ZP from stack
             PUSH ZP_dataStructPTR ;Save ZP to stack
             LPTA VAR_dataStructPTR
             SPT ZP_dataStructPTR 
-            LDX #06h
+            LDX #0Bh
 _tFill0     LDA START_DATA_STRUCT,X
             STA (ZP_dataStructPTR),X
             INX
-            CPX #0Ah
+            CPX #0Fh
             JPC _tFill4
             JMP _tFill0
 
@@ -749,9 +751,9 @@ _nBit4      LDAA VAR_second
             CMP #15
             JNC getMeteo ;Go to meteo
             ;Second >= 15
-            CMP #21
-            JNC hdlRTS ; Ignore bit 15-20
-            ;Second >= 21
+            CMP #20
+            JNC getAddInfo ; Get additional information bits
+            ;Second >= 20 (21 / Bit 20 already handled)
             CMP #29
             JNC getMinutes ;Go to minute decoding
             ;Second >= 29
@@ -822,13 +824,13 @@ _getMeteo0  CLA
             PUSH ZP_dataStructPTR ;Save ZP to stack
             LPTA VAR_dataStructPTR
             SPT ZP_dataStructPTR
-            LDX #0Ah
+            LDX #0Fh
             CLY
 _tFill1     LDA (ZP_meteoRW),Y
             STA (ZP_dataStructPTR),X
             INX
             INY
-            CPX #5Dh
+            CPX #62h
             JPC _tFill2
             JMP _tFill1
 
@@ -867,6 +869,27 @@ _gMet11     JSR getBitChar
             POP ZP_meteoRW ;Restore ZP from stack
             JMP hdlRTS       
 
+;Get/decode additional information bits
+;---------------------------------------------------------
+getAddInfo
+            CMP #15
+            JNZ _getAI0
+            LDA #03h ;VAR_addInfo start
+            STAA VAR_bitCache+1
+
+;Get additional bits
+_getAI0     PUSH ZP_dataStructPTR ;Save ZP to stack
+            LPTA VAR_dataStructPTR
+            SPT ZP_dataStructPTR  
+            LDAA VAR_bitData
+            JPZ _getAI1
+            LDA #1
+_getAI1     LDXA VAR_bitCache+1
+            STA (ZP_dataStructPTR),X
+            INCA VAR_bitCache+1
+            POP ZP_dataStructPTR ;Restore ZP from stack
+
+            JMP hdlRTS 
 
 ;Get/decode minutes
 ;---------------------------------------------------------
