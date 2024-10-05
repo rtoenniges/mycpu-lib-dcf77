@@ -783,7 +783,7 @@ _nBit4      LDAA VAR_second
 ;---------------------------------------------------------
 getMeteo    
             JSR func_getMinutes
-            JPC _gMet12 ;No minute data available -> Skip meteo section
+            JPC _gMet12 ;No minute data available -> Skip meteo section // TODO: Get every byte and check minute later
             MOD #3
             JPZ _gMet10 ;//Check for start minute -> = 0, 3, 6, 9, ...
             ;Minute -> n+1 or n+2
