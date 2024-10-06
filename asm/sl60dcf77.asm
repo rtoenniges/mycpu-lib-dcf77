@@ -508,11 +508,11 @@ _rInt6      LDA #1
 _rInt2      CMP #PARAM_SECOND 
             JNC _rInt3
             INCA VAR_second ;Time >= PARAM_SECOND -> Next second
-			LDAA VAR_second
-			CMP #58 ;Start pseudo second 59/60
-			JNC _RTS
-			LDA #1
-			STAA FLG_startPSecond
+            LDAA VAR_second
+            CMP #58 ;Start pseudo second 59/60
+            JNC _RTS
+            LDA #1
+            STAA FLG_startPSecond
             RTS
 
 
@@ -552,12 +552,12 @@ int_timer
             LDAA FLG_dcfReceiver
             JNZ _tint0       
             INCA VAR_bitCount
-			
-			;Start psuedo second
-_tint0		LDAA FLG_startPSecond
-			JPZ _RTS
-			INCA VAR_pSecond
-			RTS
+            
+            ;Start psuedo second
+_tint0        LDAA FLG_startPSecond
+            JPZ _RTS
+            INCA VAR_pSecond
+            RTS
 ;END - Timer interrupt
 ;<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -575,11 +575,11 @@ int_idle
 
 ;Pseudo second?
 _pSec       LDAA VAR_pSecond
-			CMP #31
-			JNC _RTS
-			INCA VAR_second
-			LDA #2
-			STAA FLG_startPSecond
+            CMP #31
+            JNC _RTS
+            INCA VAR_second
+            LDA #2
+            STAA FLG_startPSecond
 
 ;New bit received
 _nBit
@@ -616,12 +616,12 @@ _nBit
 _dbg2
 #ENDIF 
             LDAA FLG_startPSecond
-			CMP #2
-			JNZ _nBit5
+            CMP #2
+            JNZ _nBit5
             STZA FLG_startPSecond
-			STZA VAR_pSecond
-			POP ZP_dataStructPTR ;Restore ZP from stack
-			JMP hdlRTS
+            STZA VAR_pSecond
+            POP ZP_dataStructPTR ;Restore ZP from stack
+            JMP hdlRTS
 
 ;Get bit information
 _nBit5      JSR getBit
