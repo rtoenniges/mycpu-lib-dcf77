@@ -494,6 +494,8 @@ _rInt6      LDA #1
             STZA FLG_synced
             STZA VAR_second
             STZA VAR_edgeCnt
+			STZA FLG_startPSecond
+            STZA VAR_pSecond
             
 #IFDEF DEBUG
     LDA #13 ;\r
@@ -554,7 +556,7 @@ int_timer
             INCA VAR_bitCount
             
             ;Start psuedo second
-_tint0        LDAA FLG_startPSecond
+_tint0      LDAA FLG_startPSecond
             JPZ _RTS
             INCA VAR_pSecond
             RTS
