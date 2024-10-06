@@ -494,7 +494,7 @@ _rInt6      LDA #1
             STZA FLG_synced
             STZA VAR_second
             STZA VAR_edgeCnt
-			STZA FLG_startPSecond
+            STZA FLG_startPSecond
             STZA VAR_pSecond
             
 #IFDEF DEBUG
