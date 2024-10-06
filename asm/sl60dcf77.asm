@@ -59,13 +59,14 @@ PARAM_IGNORE        SET 2       ;Edge time < PARAM_IGNORE       = Signal interfe
 FLG_firstStart      DB  1   ;This flag indicates first start of library -> Ignore first edge
 FLG_dcfReceiver     DW  0   ;This flag is set to 1 if new input (rising edge) comes from the DCF77-Receiver
                             ;FLG_dcfReceiver+1 is set to 1 if bit is ready for decoding
+FLG_startPSecond    DB  0   ;This flag starts the pseudo second (Bit 59) if no leap second was received (1 = Timer start, 2 = Second reached)
 VAR_bitCount        DB  0   ;Timer Interrupt Counter
 VAR_bitCache        DW  0   ;Byte 0 = time value, Byte 1 = temp value
 VAR_edgeCnt         DB  0   ;Edge counter
 
 VAR_dateParity      DB  0
 
-;VAR_pSecond         DB  0   ;Pseudo second to bridge desynchronization
+VAR_pSecond         DB  0   ;Pseudo second to bridge desynchronization
 
 ;Time variables initialized with FFh to "lock" Get-functions until 2nd synchronization point reached
 START_DATA_STRUCT
@@ -501,21 +502,19 @@ _rInt6      LDA #1
     JSR (KERN_PRINTSTR)
 #ENDIF
 
-            JMP _rInt5
+            JMP _RTS
 
 ;Time < PARAM_SYNCPAUSE          
 _rInt2      CMP #PARAM_SECOND 
             JNC _rInt3
             INCA VAR_second ;Time >= PARAM_SECOND -> Next second
-            
-_rInt5      PUSH ZP_dataStructPTR ;Save ZP to stack
-            LPTA VAR_dataStructPTR
-            SPT ZP_dataStructPTR
-            LDX #08h
-            LDAA VAR_second
-            STA (ZP_dataStructPTR),X ;Add second to struct in RAM
-            POP ZP_dataStructPTR ;Restore ZP from stack
+			LDAA VAR_second
+			CMP #58 ;Start pseudo second 59/60
+			JNC _RTS
+			LDA #1
+			STAA FLG_startPSecond
             RTS
+
 
 ;Time < PARAM_SECOND -> New bit
 _rInt3      LDAA VAR_edgeCnt ;First do signal checking -> Twice as many edges+1 as seconds?
@@ -551,9 +550,14 @@ _rInt4      LDA #1
 int_timer
             ;Measure time between two edges
             LDAA FLG_dcfReceiver
-            JNZ _RTS       
+            JNZ _tint0       
             INCA VAR_bitCount
-            RTS
+			
+			;Start psuedo second
+_tint0		LDAA FLG_startPSecond
+			JPZ _RTS
+			INCA VAR_pSecond
+			RTS
 ;END - Timer interrupt
 ;<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
@@ -565,10 +569,20 @@ int_idle
 
 ;New bit available?
             LDAA FLG_dcfReceiver+1
-            JPZ _RTS
+            JPZ _pSec
             STZA FLG_dcfReceiver+1 ;Get ready for new bit immediately
+            JMP _nBit
+
+;Pseudo second?
+_pSec       LDAA VAR_pSecond
+			CMP #31
+			JNC _RTS
+			INCA VAR_second
+			LDA #2
+			STAA FLG_startPSecond
 
 ;New bit received
+_nBit
 ;---------------------------------------------------------
 ;Display synced status on I/O-Module LEDs
 #IFDEF SYNC_DISP
@@ -587,8 +601,13 @@ int_idle
             LDAA FLG_synced
             STA (ZP_dataStructPTR),X
 
+            LDX #08h ;Second
+            LDAA VAR_second
+            STA (ZP_dataStructPTR),X ;Add second to struct in RAM
+
 ;DEBUG print desynchronisation            
 #IFDEF DEBUG
+        LDAA FLG_synced
         JPZ _dbg2
         LDA #13 ;\r
         JSR (KERN_PRINTCHAR)
@@ -596,9 +615,16 @@ int_idle
         JSR (KERN_PRINTSTR)
 _dbg2
 #ENDIF 
+            LDAA FLG_startPSecond
+			CMP #2
+			JNZ _nBit5
+            STZA FLG_startPSecond
+			STZA VAR_pSecond
+			POP ZP_dataStructPTR ;Restore ZP from stack
+			JMP hdlRTS
 
 ;Get bit information
-            JSR getBit
+_nBit5      JSR getBit
             STAA VAR_bitData
             
 ;Add data to struct in RAM
