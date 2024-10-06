@@ -22,7 +22,7 @@
 ;Comment this line in if you want debug output
 ;#DEFINE DEBUG
 
-;Debug Message
+;Debug Message Format
 ;Second[MeteoCount1|MeteoCount2]: BitLevel(PulseTime) {Additional comments}
 ;Example: 28[28|49]: H(6) Minute: 32
 
@@ -100,7 +100,6 @@ VAR_meteo2          DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
                     DB  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0
                     DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
          
-;TODO: Zeropages reduzieren (Evtl. nur einer?!) -> Pointer zuerst in normalen Variablen speichern 
 VAR_meteoWritePTR   DS  2
 VAR_meteoReadPTR    DS  2
 VAR_dataStructPTR   DS  2
