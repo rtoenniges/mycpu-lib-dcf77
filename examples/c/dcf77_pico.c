@@ -43,24 +43,25 @@ static void dcfHandler(void)
 
 void lcdPrint(void)
 {
-		unsigned char dcf77Struct[15];
-		unsigned int second, minute, hour, day, month, year;
+		unsigned char dcf77Struct[17];
+		unsigned int second, minute, hour, day, month, year, delay;
 	
-		memcpyf2n(&dcf77Struct, dcf77StructPTR, sizeof(dcf77Struct));
+	memcpyf2n(&dcf77Struct, dcf77StructPTR, sizeof(dcf77Struct));
 
-		lcd_gotoxy(0,1);
-			
-		if (dcf77Struct[0x00] == 0) //Receiver synchronized?
+	lcd_gotoxy(0,1);
+		
+	if (dcf77Struct[0x00] == 0) //Receiver synchronized?
 		{
-			second = dcf77Struct[0x08];
+			second = dcf77Struct[0x0A];
 			
 			if ((dcf77Struct[0x01] & 0x07) == 0x07) //DateTime info available?
 			{
-				minute = dcf77Struct[0x09];
-				hour = dcf77Struct[0x0A];
-				day = dcf77Struct[0x0B];
-				month = dcf77Struct[0x0D];
-				year = dcf77Struct[0x0E];
+				minute = dcf77Struct[0x0B];
+				hour = dcf77Struct[0x0C];
+				day = dcf77Struct[0x0D];
+				month = dcf77Struct[0x0F];
+				year = dcf77Struct[0x010];
+				delay = dcf77Struct[0x08];
 				
 				if (dcf77Struct[0x05] && !dcf77Struct[0x06]) //MESZ
 				{
@@ -98,83 +99,92 @@ void lcdPrint(void)
 				lprintf("Second: %02d          ", second);
 			}
 			
-			if (second == 0)
+			if (delay > 0)
 			{
-				strcpy((char*)minData, "          ");
-				strcpy((char*)hourData, "            ");
-				strcpy((char*)dayData, "             ");
-				strcpy((char*)wdayData, "         ");
-				strcpy((char*)monthData, "           ");
-				strcpy((char*)yearData, "            ");
-			}
-			else if (second >= 15 && second < 21 && (dcf77Struct[0x01] & 0x08) == 0x08 && (minute % 3) == 2)
-			{
-				lprintf("->METEO available!  ");
-			}
-			else if (second >= 21 && second < 29) //Get minute
-			{
-				if (second == 28)
-				{
-					//Print parity bit
-					minData[28-second] = '(';
-					minData[28+1-second] = dcf77Struct[0x02] + '0';
-					minData[28+2-second] = ')';
-				}
-				else
-				{
-					minData[30-second] = dcf77Struct[0x02] + '0';
-				}
-				lprintf("->Minute: %s", minData);
-			}
-			else if (second >= 29 && second < 36) //Get hour
-			{
-				if (second == 35)
-				{
-					//Print parity bit
-					hourData[35-second] = '(';
-					hourData[35+1-second] = dcf77Struct[0x02] + '0';
-					hourData[35+2-second] = ')';
-				}
-				else
-				{
-					hourData[37-second] = dcf77Struct[0x02] + '0';
-				}
-				lprintf("->Hour: %s", hourData);
-			}
-			else if (second >= 36 && second < 42) //Get day
-			{
-				dayData[41-second] = dcf77Struct[0x02] + '0';
-				lprintf("->Day: %s", dayData);
-			}
-			else if (second >= 42 && second < 45) //Get weekday
-			{
-				wdayData[44-second] = dcf77Struct[0x02] + '0';
-				lprintf("->Weekday: %s", wdayData);
-			}
-			else if (second >= 45 && second < 50) //Get month
-			{
-				monthData[49-second] = dcf77Struct[0x02] + '0';
-				lprintf("->Month: %s", monthData);
-			}
-			else if (second >= 50 && second <= 58) //Get year
-			{
-				if (second == 58)
-				{
-					//Print parity bit
-					yearData[58-second] = '(';
-					yearData[58+1-second] = dcf77Struct[0x02] + '0';
-					yearData[58+2-second] = ')';
-				}
-				else
-				{
-					yearData[60-second] = dcf77Struct[0x02] + '0';
-				}
-				lprintf("->Year: %s", yearData);
+				lprintf("Receiver delay!: %02ds", delay);
 			}
 			else
 			{
-				lprintf("                    ");
+				//Print data info
+				if (second == 0)
+				{
+					strcpy((char*)minData, "          ");
+					strcpy((char*)hourData, "            ");
+					strcpy((char*)dayData, "             ");
+					strcpy((char*)wdayData, "         ");
+					strcpy((char*)monthData, "           ");
+					strcpy((char*)yearData, "            ");
+				}
+				else if (second >= 15 && second < 21 && (dcf77Struct[0x01] & 0x08) == 0x08 && (minute % 3) == 2)
+				{
+					lprintf("->METEO available!  ");
+				}
+				else if (second >= 21 && second < 29) //Get minute
+				{
+					if (second == 28)
+					{
+						//Print parity bit
+						minData[28-second] = '(';
+						minData[28+1-second] = dcf77Struct[0x02] + '0';
+						minData[28+2-second] = ')';
+					}
+					else
+					{
+						minData[30-second] = dcf77Struct[0x02] + '0';
+					}
+					lprintf("->Minute: %s", minData);
+				}
+				else if (second >= 29 && second < 36) //Get hour
+				{
+					if (second == 35)
+					{
+						//Print parity bit
+						hourData[35-second] = '(';
+						hourData[35+1-second] = dcf77Struct[0x02] + '0';
+						hourData[35+2-second] = ')';
+					}
+					else
+					{
+						hourData[37-second] = dcf77Struct[0x02] + '0';
+					}
+					lprintf("->Hour: %s", hourData);
+				}
+				else if (second >= 36 && second < 42) //Get day
+				{
+					dayData[41-second] = dcf77Struct[0x02] + '0';
+					lprintf("->Day: %s", dayData);
+				}
+				else if (second >= 42 && second < 45) //Get weekday
+				{
+					wdayData[44-second] = dcf77Struct[0x02] + '0';
+					lprintf("->Weekday: %s", wdayData);
+				}
+				else if (second >= 45 && second < 50) //Get month
+				{
+					monthData[49-second] = dcf77Struct[0x02] + '0';
+					lprintf("->Month: %s", monthData);
+				}
+				else if (second >= 50 && second <= 58) //Get year
+				{
+					if (second == 58)
+					{
+						//Print parity bit
+						yearData[58-second] = '(';
+						yearData[58+1-second] = dcf77Struct[0x02] + '0';
+						yearData[58+2-second] = ')';
+					}
+					else
+					{
+						yearData[60-second] = dcf77Struct[0x02] + '0';
+					}
+					lprintf("->Year: %s", yearData);
+				}
+				else
+				{
+					lprintf("                    ");
+				}
 			}
+			
 			
 		}
 		else
