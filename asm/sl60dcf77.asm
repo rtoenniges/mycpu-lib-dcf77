@@ -57,9 +57,8 @@ PARAM_IGNORE        SET 2       ;Edge time < PARAM_IGNORE       = Signal interfe
 
 ;Variables
 FLG_firstStart      DB  1   ;This flag indicates first start of library -> Ignore first edge
-FLG_dcfReceiver     DW  0   ;This flag is set to 1 if new input (rising edge) comes from the DCF77-Receiver
-                            ;FLG_dcfReceiver+1 is set to 1 if bit is ready for decoding
-FLG_startPSecond    DB  0   ;This flag starts the pseudo second (Bit 59) if no leap second was received (1 = Timer start, 2 = Second reached)
+FLG_dcfReceiver     DB  0   ;This flag is set to 1 if new input (rising edge) comes from the DCF77-Receiver
+FLG_startPSecond    DW  0   ;This flag starts the pseudo second (Bit 59) if no leap second was received (Byte 0 = Timer start, Byte 1 = Second reached)
 VAR_bitCount        DB  0   ;Timer Interrupt Counter
 VAR_bitCache        DW  0   ;Byte 0 = time value, Byte 1 = temp value
 VAR_edgeCnt         DB  0   ;Edge counter
@@ -69,31 +68,36 @@ VAR_dateParity      DB  0
 VAR_pSecond         DB  0   ;Pseudo second to bridge desynchronization
 
 ;Time variables initialized with FFh to "lock" Get-functions until 2nd synchronization point reached
+;*****************
 START_DATA_STRUCT
 FLG_synced          DB  1   ;00h | Sync flag -> 0 if synchron with dcf77
 VAR_dataOK          DB  0   ;01h | Parity check -> Bit 0 = Minutes OK, Bit 1 = Hours OK, Bit 2 = Date OK, Bit 3 = Meteo OK
 VAR_bitData         DB  0   ;02h | Bit data '0->00h' or '1->80h' of current second
 VAR_addInfo         DB  0, 0, 0, 0, 0   ;03h - 07h | Additional infos 1 or 0 (03h = Callbit, 04h = Switch MEZ/MESZ, 05h = MESZ, 06h = MEZ, 07h = Leap second)
 
-VAR_second          DB  0FFh ;08h | DCF77-Second/Bit counter
-VAR_minutes         DB  0FFh ;09h
-VAR_hours           DB  0FFh ;0Ah
+VAR_delay           DB  0   ;08h | delay in seconds
+VAR_reserve         DB  0   ;09h | Reserve
 
-VAR_day             DB  0FFh ;0Bh
-VAR_weekday         DB  0FFh ;0Ch
-VAR_month           DB  0FFh ;0Dh
-VAR_year            DB  0FFh ;0Eh                   
-END_DATA_STRUCT ; + Meteo data -> 0Fh - 62h 
+VAR_second          DB  0FFh ;0Ah | DCF77-Second/Bit counter
+VAR_minutes         DB  0FFh ;0Bh
+VAR_hours           DB  0FFh ;0Ch
 
-PAR_DATA_SIZE       EQU END_DATA_STRUCT - START_DATA_STRUCT + 83
+VAR_day             DB  0FFh ;0Dh
+VAR_weekday         DB  0FFh ;0Eh
+VAR_month           DB  0FFh ;0Fh
+VAR_year            DB  0FFh ;10h   
 
-
-;2x 82 Bit + 0
+                    ;11h - 63h
 VAR_meteo1          DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ;Weather bits n
                     DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ;Weather bits n+1
                         ;******* Minute *******|********* Hour *********|********* Day **********|**** Month ****|*** WD **|******** Year *********|
                     DB  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0
                     DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ;Weather bits n+2
+END_DATA_STRUCT
+;*****************
+
+PAR_DATA_SIZE       EQU END_DATA_STRUCT - START_DATA_STRUCT
+
 
 VAR_meteo2          DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
                     DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
@@ -109,6 +113,7 @@ ZP_dataStructPTR    EQU 12h ;Pointer for Data struct
 VAR_meteoCount1     DB  0 ;Weather bit counter (0-41)
 VAR_meteoCount2     DB  0 ;Time bit counter (42-81)
 
+VAR_tmpSecond       DB  0
 VAR_tmpMinutes      DB  0
 VAR_tmpHours        DB  0
 VAR_tmpDay          DB  0
@@ -127,9 +132,10 @@ VAR_HDLCount        DB  0 ;Number of registered handlers
 VAR_HDLbitmaskREG   DB  0,0,0,0,0,0 ;Bitmask of registered handlers
 VAR_HDLbitmaskEN    DB  0,0,0,0,0,0 ;Bitmask of enabled handlers
 VAR_HDLPTR          DB  0 ;Current active handler
-VAR_TEMP_ROMPAGE    DS  1 ;ROMPAGE from application
-VAR_TEMP            DS  2 ;Temporary application handler address
-VAR_TEMP2           DS  5 ;Temporary stack variable
+
+PAR_FIFOsize        SET 24
+VAR_FIFOdata        DS  PAR_FIFOsize*2 ;FIFO for second and bit data, in case CPU is busy and idle handler is not called often enough (LOW = second, HIGH = bit)
+VAR_FIFOptr         DW  0 ;Pointer for FIFO. 0 = No new data available (Byte 0 = WritePTR, Byte 1 = ReadPTR)
 
 #IFDEF DEBUG
 STR_sync            DB "Sync pause detected!",0
@@ -349,8 +355,7 @@ func_getYear
             JMP _RTS
             
 ;Function '08h' = Get encoded METEO Information (X/Y = Pointer to zero terminated string), Carry = 0 if successfull
-;Bit 0-41 = meteotime (3 minutes)
-;Bit 42-81 = time information (Minutes + Hours + Day + Month + Weekday + Year) without parity
+;TODO: INFO
 func_getMeteoTime
             LDAA VAR_dataOK
             AND #08h
@@ -396,13 +401,11 @@ func_getDataStruct
 ;C(1) = Set new handler -> X/Y = Handler-Address, Accu = Return Handler-No.
 ;C(0) = Delete handler -> Handler-No. in X-Reg
 ;Return Carry = 0 if successfull
-; -> Function '0Dh' = "Tell ROMPAGE" need to be called also!
+; -> Function '0Dh' = "Tell ROMPAGE" needs to be called also!
 func_setHandler
             JNC _clrHDL0
-            SPTA VAR_TEMP
     
 ;Set new handler
-            LPTA VAR_TEMP
             TXA
             CLX
             PHA
@@ -494,6 +497,7 @@ _rInt6      LDA #1
             STZA VAR_second
             STZA VAR_edgeCnt
             STZA FLG_startPSecond
+            STZA FLG_startPSecond+1
             STZA VAR_pSecond
             
 #IFDEF DEBUG
@@ -503,18 +507,32 @@ _rInt6      LDA #1
     JSR (KERN_PRINTSTR)
 #ENDIF
 
-            JMP _RTS
+            JMP _rInt1
 
 ;Time < PARAM_SYNCPAUSE          
 _rInt2      CMP #PARAM_SECOND 
             JNC _rInt3
             INCA VAR_second ;Time >= PARAM_SECOND -> Next second
+            
+;Check for leap second | Add psude second 59/60
+            LDAA VAR_addInfo+4 ;Leap second at the end of hour?
+            JPZ _rInt7
+            JSR func_getMinutes
+            JPC _rInt7
+            CMP #59
+            JNZ _rInt7
             LDAA VAR_second
-            CMP #58 ;Start pseudo second 59/60
-            JNC _RTS
+            CMP #59
             LDA #1
             STAA FLG_startPSecond
-            RTS
+            JMP _rInt1
+            
+_rInt7      LDAA VAR_second
+            CMP #58 ;Start pseudo second 59
+            JNZ _rInt1
+            LDA #1
+            STAA FLG_startPSecond
+            JMP _rInt1
 
 
 ;Time < PARAM_SECOND -> New bit
@@ -535,11 +553,33 @@ deSync
             STZA VAR_second
             STZA VAR_meteoCount1
             STZA VAR_meteoCount2
-  
-;New bit -> Ready for decode   
-_rInt4      LDA #1
-            STAA FLG_dcfReceiver+1
-
+            STZA FLG_startPSecond
+            STZA FLG_startPSecond+1
+            STZA VAR_pSecond
+            JSR _rInt1
+            JMP _rInt4
+            
+            
+;New second -> add to stack
+_rInt1      LDAA VAR_FIFOptr
+            CLC
+            MUL #2 ;Stack has two bytes per pointer
+            TAX
+            LDAA VAR_second
+            STA VAR_FIFOdata,X 
+            RTS
+            
+;New bit -> add to stack  
+_rInt4      LDAA VAR_FIFOptr
+            CLC
+            MUL #2 ;Stack has two bytes per pointer
+            TAX
+            JSR getBit
+            STA VAR_FIFOdata+1,X
+            LDAA VAR_FIFOptr
+            CMP #PAR_FIFOsize-1
+            JPC _RTS
+            INCA VAR_FIFOptr
             RTS
 ;END - Receiver interrupt
 ;<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -569,21 +609,78 @@ _tint0      LDAA FLG_startPSecond
 int_idle
 
 ;New bit available?
-            LDAA FLG_dcfReceiver+1
-            JPZ _pSec
-            STZA FLG_dcfReceiver+1 ;Get ready for new bit immediately
+            SEC
+            JSR (KERN_SPINLOCK)
+
+            LDAA VAR_FIFOptr ;Write Pointer
+            JPZ _pSec ;No data
+            
+;Gather second and bit data from FIFO
+            LDAA VAR_FIFOptr+1
+            CLC
+            MUL #2 ;FIFO has two bytes per pointer
+            TAX
+            LDA VAR_FIFOdata,X
+            STAA VAR_tmpSecond
+            LDA VAR_FIFOdata+1,X
+            STAA VAR_bitData
+            
+            LDAA VAR_FIFOptr
+            DEC ;WritePTR starts by 1
+            JPZ _nBit8
+            CMPA VAR_FIFOptr+1
+            JPZ _nBit7
+            JNC _nBit9
+            ;Write>Read
+            INCA VAR_FIFOptr+1
+            JMP _nBit
+            
+;Write==0(1)            
+_nBit8      DECA VAR_FIFOptr
+            JMP _nBit
+            
+;Read==Write>=1(2)           
+_nBit7      STZA VAR_FIFOptr
+            STZA VAR_FIFOptr+1
             JMP _nBit
 
+;Write<Read --> ERROR reset FIFO
+_nBit9      STZA VAR_FIFOptr
+            STZA VAR_FIFOptr+1
+_nBit10     CLC
+            JSR (KERN_SPINLOCK)
+            RTS
+
 ;Pseudo second?
-_pSec       LDAA VAR_pSecond
+_pSec       LDAA VAR_FIFOptr
+            JNZ _nBit10 ;Add pseudo second only if idle-task is in sync with interrupt
+            LDAA VAR_pSecond
             CMP #31
-            JNC _RTS
-            INCA VAR_second
-            LDA #2
-            STAA FLG_startPSecond
+            JNC _nBit10
+            INCA VAR_tmpSecond
+            STZA VAR_bitData
+            STZA FLG_startPSecond
+            STZA VAR_pSecond
 
 ;New bit received
-_nBit
+_nBit       CLC
+            JSR (KERN_SPINLOCK)
+
+;Add VAR_delay to data struct in RAM            
+            LDX #08h
+            LDAA VAR_FIFOptr
+            SEC
+            SBCA VAR_FIFOptr+1
+            STAA VAR_delay
+            STA (ZP_dataStructPTR),X
+            
+;TODO: DEBUG PRINT stack pointer
+    ;LDAA VAR_FIFOptr
+    ;CLX
+    ;CLY
+    ;JSR (KERN_PRINTDEZ)
+    ;LDA #13 ;\r
+    ;JSR (KERN_PRINTCHAR)
 ;---------------------------------------------------------
 ;Display synced status on I/O-Module LEDs
 #IFDEF SYNC_DISP
@@ -596,14 +693,15 @@ _nBit
 
 ;Add data to struct in RAM
             PUSH ZP_dataStructPTR ;Save ZP to stack
+            PUSH ZP_dataStructPTR+1 ;Save ZP to stack
             LPTA VAR_dataStructPTR
             SPT ZP_dataStructPTR
             LDX #00h ;FLG_synced
             LDAA FLG_synced
             STA (ZP_dataStructPTR),X
 
-            LDX #08h ;Second
-            LDAA VAR_second
+            LDX #0Ah ;Second
+            LDAA VAR_tmpSecond
             STA (ZP_dataStructPTR),X ;Add second to struct in RAM
 
 ;DEBUG print desynchronisation            
@@ -616,23 +714,14 @@ _nBit
         JSR (KERN_PRINTSTR)
 _dbg2
 #ENDIF 
-            LDAA FLG_startPSecond
-            CMP #2
-            JNZ _nBit5
-            STZA FLG_startPSecond
-            STZA VAR_pSecond
-            POP ZP_dataStructPTR ;Restore ZP from stack
-            JMP hdlRTS
 
-;Get bit information
-_nBit5      JSR getBit
-            STAA VAR_bitData
-            
 ;Add data to struct in RAM
+_nBit5      LDAA VAR_bitData
             JPZ _tFill3
             LDA #1
 _tFill3     LDX #02h ;VAR_bitData
             STA (ZP_dataStructPTR),X
+            POP ZP_dataStructPTR+1 ;Restore ZP from stack
             POP ZP_dataStructPTR ;Restore ZP from stack
                       
 ;If not synced -> Stop decoding
@@ -666,7 +755,7 @@ _nBit0      LDAA FLG_synced
         LDA #' '
         JSR (KERN_PRINTCHAR)
         
-        LDAA VAR_bitData
+        JSR getBit
         CMP #80h
         JNZ _dbg0
         LDA #'H'
@@ -686,16 +775,17 @@ _dbg1   JSR (KERN_PRINTCHAR)
 #ENDIF 
 
 ;Check which second/bit we have            
-            LDAA VAR_second
+            LDAA VAR_tmpSecond
             JNZ _nBit3
             LDAA VAR_bitData
             JNZ deSync ;If Bit 0 != 0 -> Not synchronized or incorrect signal
             
 ;Second/bit = 0 -> Take over data from last minute  
             PUSH ZP_dataStructPTR ;Save ZP to stack
+            PUSH ZP_dataStructPTR+1 ;Save ZP to stack
             LPTA VAR_dataStructPTR
             SPT ZP_dataStructPTR  
-            LDAA VAR_second
+            LDAA VAR_tmpSecond
             TAY            
             LDAA VAR_dataOK
             AND #01h
@@ -704,7 +794,7 @@ _dbg1   JSR (KERN_PRINTCHAR)
             STAA VAR_minutes
             TAX
             PHX
-            LDX #09h
+            LDX #0Bh
             LDA START_DATA_STRUCT,X
             STA (ZP_dataStructPTR),X ;Add minutes to data struct in RAM
 _nBit1      LDAA VAR_dataOK
@@ -712,7 +802,7 @@ _nBit1      LDAA VAR_dataOK
             JPZ _nBit2
             LDAA VAR_tmpHours
             STAA VAR_hours ;Take over 'hours'
-            LDX #0Ah
+            LDX #0Ch
             LDA START_DATA_STRUCT,X
             STA (ZP_dataStructPTR),X ;Add hours to data struct in RAM
             PLX
@@ -728,7 +818,8 @@ _nBit1      LDAA VAR_dataOK
             SEC
             JSR (KERN_GETSETTIME)
             
-_nBit2      POP ZP_dataStructPTR ;Restore ZP from stack
+_nBit2      POP ZP_dataStructPTR+1 ;Restore ZP from stack
+            POP ZP_dataStructPTR ;Restore ZP from stack
             LDAA VAR_dataOK
             AND #04h
             JPZ hdlRTS
@@ -744,7 +835,7 @@ _nBit2      POP ZP_dataStructPTR ;Restore ZP from stack
             STAA VAR_day
             ;Set system datetime
             PHA
-            LDAA VAR_second
+            LDAA VAR_tmpSecond
             CMP #0
             JNZ hdlRTS ;Sync every minute at xx:xx:00
             PLA
@@ -753,17 +844,19 @@ _nBit2      POP ZP_dataStructPTR ;Restore ZP from stack
             
 ;fill struct in RAM with date data
             PUSH ZP_dataStructPTR ;Save ZP to stack
+            PUSH ZP_dataStructPTR+1 ;Save ZP to stack
             LPTA VAR_dataStructPTR
             SPT ZP_dataStructPTR 
-            LDX #0Bh
+            LDX #0Dh
 _tFill0     LDA START_DATA_STRUCT,X
             STA (ZP_dataStructPTR),X
             INX
-            CPX #0Fh
+            CPX #11h
             JPC _tFill4
             JMP _tFill0
 
-_tFill4     POP ZP_dataStructPTR ;Restore ZP from stack
+_tFill4     POP ZP_dataStructPTR+1 ;Restore ZP from stack
+            POP ZP_dataStructPTR ;Restore ZP from stack
             JMP hdlRTS
 
 ;Second > 0        
@@ -774,7 +867,7 @@ _nBit3      CMP #20
             JMP hdlRTS
  
 ;Second != 20 - Get/decode data
-_nBit4      LDAA VAR_second
+_nBit4      LDAA VAR_tmpSecond
             CMP #15
             JNC getMeteo ;Go to meteo
             ;Second >= 15
@@ -819,6 +912,7 @@ getMeteo
             JNC hdlRTS ;Previous data not complete
             TAX
             PUSH ZP_meteoRW ;Save ZP to stack
+            PUSH ZP_meteoRW+1 ;Save ZP to stack
             PHX
             LPTA VAR_meteoWritePTR
             SPT ZP_meteoRW
@@ -829,6 +923,7 @@ getMeteo
             TXA
             CMP #41
             JPZ _getMeteo0
+            POP ZP_meteoRW+1 ;Restore ZP from stack
             POP ZP_meteoRW ;Restore ZP from stack
             JMP hdlRTS
             
@@ -849,20 +944,23 @@ _getMeteo0  CLA
 ;fill data struct with meteo data (Zero terminated string)
             SPT ZP_meteoRW
             PUSH ZP_dataStructPTR ;Save ZP to stack
+            PUSH ZP_dataStructPTR+1 ;Save ZP to stack
             LPTA VAR_dataStructPTR
             SPT ZP_dataStructPTR
-            LDX #0Fh
+            LDX #11h
             CLY
 _tFill1     LDA (ZP_meteoRW),Y
             STA (ZP_dataStructPTR),X
             INX
             INY
-            CPX #62h
+            CPY #83 ; Meteo String 82 Byte + 0
             JPC _tFill2
             JMP _tFill1
 
 _tFill2
+            POP ZP_dataStructPTR+1 ;Restore ZP from stack
             POP ZP_dataStructPTR ;Restore ZP from stack
+            POP ZP_meteoRW+1 ;Restore ZP from stack
             POP ZP_meteoRW ;Restore ZP from stack
 
 ;DEBUG print meteo string
@@ -881,18 +979,20 @@ _gMet12     STZA VAR_meteoCount1 ;Reset bit counter
             JMP hdlRTS    
             
 ;Start minute (0, 3, 6, 9, ...)
-_gMet10     LDAA VAR_second
+_gMet10     LDAA VAR_tmpSecond
             CMP #1
             JNZ _gMet11 ;Bit > 1 -> Write to Array
             STZA VAR_meteoCount1 ;First minute & first bit -> Reset bit counter
             STZA VAR_meteoCount2 ;First minute & first bit -> Reset bit counter
 _gMet11     JSR getBitChar
             PUSH ZP_meteoRW ;Save ZP to stack
+            PUSH ZP_meteoRW+1 ;Save ZP to stack
             LPTA VAR_meteoWritePTR
             SPT ZP_meteoRW
             LDXA VAR_meteoCount1
             STA (ZP_meteoRW),X
             INCA VAR_meteoCount1
+            POP ZP_meteoRW+1 ;Restore ZP from stack
             POP ZP_meteoRW ;Restore ZP from stack
             JMP hdlRTS       
 
@@ -906,6 +1006,7 @@ getAddInfo
 
 ;Get additional bits
 _getAI0     PUSH ZP_dataStructPTR ;Save ZP to stack
+            PUSH ZP_dataStructPTR+1 ;Save ZP to stack
             LPTA VAR_dataStructPTR
             SPT ZP_dataStructPTR  
             LDAA VAR_bitData
@@ -914,6 +1015,7 @@ _getAI0     PUSH ZP_dataStructPTR ;Save ZP to stack
 _getAI1     LDXA VAR_bitCache+1
             STA (ZP_dataStructPTR),X
             INCA VAR_bitCache+1
+            POP ZP_dataStructPTR+1 ;Restore ZP from stack
             POP ZP_dataStructPTR ;Restore ZP from stack
 
             JMP hdlRTS 
@@ -938,11 +1040,13 @@ _gMet20     LDAA VAR_meteoCount1
             JNZ _gMin0 ;Previous meteo data not complete
             JSR getBitChar
             PUSH ZP_meteoRW ;Save ZP to stack
+            PUSH ZP_meteoRW+1 ;Save ZP to stack
             LPTA VAR_meteoWritePTR
             SPT ZP_meteoRW
             LDXA VAR_meteoCount2
             STA (ZP_meteoRW),X
             INCA VAR_meteoCount2
+            POP ZP_meteoRW+1 ;Restore ZP from stack
             POP ZP_meteoRW ;Restore ZP from stack
 
 ;Get bit (minutes)
@@ -957,12 +1061,14 @@ _gMet21     LDAA VAR_meteoCount2
             CMP #49
             JNZ parityMinutes ;Previous meteo data not complete
             PUSH ZP_meteoRW ;Save ZP to stack
+            PUSH ZP_meteoRW+1 ;Save ZP to stack
             LPTA VAR_meteoWritePTR
             SPT ZP_meteoRW
             TAX
             LDA #'0'
             STA (ZP_meteoRW),X
             INCA VAR_meteoCount2
+            POP ZP_meteoRW+1 ;Restore ZP from stack
             POP ZP_meteoRW ;Restore ZP from stack
 
 ;Last bit
@@ -1033,11 +1139,13 @@ _gMet30     LDAA VAR_meteoCount1
             JNZ _gHrs0 ;Previous meteo data not complete
             JSR getBitChar
             PUSH ZP_meteoRW ;Save ZP to stack
+            PUSH ZP_meteoRW+1 ;Save ZP to stack
             LPTA VAR_meteoWritePTR
             SPT ZP_meteoRW
             LDXA VAR_meteoCount2
             STA (ZP_meteoRW),X
             INCA VAR_meteoCount2
+            POP ZP_meteoRW+1 ;Restore ZP from stack
             POP ZP_meteoRW ;Restore ZP from stack
 
 ;Get bit (hours)
@@ -1052,6 +1160,7 @@ _gMet31     LDAA VAR_meteoCount2
             CMP #56
             JNZ parityHours ;Previous meteo data not complete
             PUSH ZP_meteoRW ;Save ZP to stack
+            PUSH ZP_meteoRW+1 ;Save ZP to stack
             LPTA VAR_meteoWritePTR
             SPT ZP_meteoRW
             TAX
@@ -1061,6 +1170,7 @@ _gMet31     LDAA VAR_meteoCount2
             STA (ZP_meteoRW),X ; 2. '0'
             INX
             STXA VAR_meteoCount2
+            POP ZP_meteoRW+1 ;Restore ZP from stack
             POP ZP_meteoRW ;Restore ZP from stack
 
 ;Last bit
@@ -1129,11 +1239,13 @@ _gMet40     LDAA VAR_meteoCount1
             JNZ _gDay0 ;Previous meteo data not complete
             JSR getBitChar
             PUSH ZP_meteoRW ;Save ZP to stack
+            PUSH ZP_meteoRW+1 ;Save ZP to stack
             LPTA VAR_meteoWritePTR
             SPT ZP_meteoRW
             LDXA VAR_meteoCount2
             STA (ZP_meteoRW),X
             INCA VAR_meteoCount2
+            POP ZP_meteoRW+1 ;Restore ZP from stack
             POP ZP_meteoRW ;Restore ZP from stack
   
 ;Get bit (day)      
@@ -1142,7 +1254,7 @@ _gDay0      LDAA VAR_bitData
             SHR
             STAA VAR_bitCache+1
             ;Check for last bit
-            LDAA VAR_second
+            LDAA VAR_tmpSecond
             CMP #41       
             JNZ hdlRTS 
 
@@ -1151,6 +1263,7 @@ _gDay0      LDAA VAR_bitData
             CMP #64
             JNZ _gDay1 ;Previous meteo data not complete
             PUSH ZP_meteoRW ;Save ZP to stack
+            PUSH ZP_meteoRW+1 ;Save ZP to stack
             LPTA VAR_meteoWritePTR
             SPT ZP_meteoRW
             TAX
@@ -1160,6 +1273,7 @@ _gDay0      LDAA VAR_bitData
             STA (ZP_meteoRW),X ; 2. '0'
             LDA #71
             STAA VAR_meteoCount2  
+            POP ZP_meteoRW+1 ;Restore ZP from stack
             POP ZP_meteoRW ;Restore ZP from stack
             
 ;Last bit
@@ -1202,11 +1316,13 @@ _gMet50     LDAA VAR_meteoCount1
             JNZ _getWDay0 ;Previous meteo data not complete
             JSR getBitChar
             PUSH ZP_meteoRW ;Save ZP to stack
+            PUSH ZP_meteoRW+1 ;Save ZP to stack
             LPTA VAR_meteoWritePTR
             SPT ZP_meteoRW
             LDXA VAR_meteoCount2
             STA (ZP_meteoRW),X
             INCA VAR_meteoCount2
+            POP ZP_meteoRW+1 ;Restore ZP from stack
             POP ZP_meteoRW ;Restore ZP from stack
 
 ;Get bit (weekday)    
@@ -1215,7 +1331,7 @@ _getWDay0   LDAA VAR_bitData
             SHR
             STAA VAR_bitCache+1
             ;Check for last bit
-            LDAA VAR_second
+            LDAA VAR_tmpSecond
             CMP #44       
             JNZ hdlRTS
 
@@ -1270,11 +1386,13 @@ _gMet60     LDAA VAR_meteoCount1
             JNZ _gMon0 ;Previous meteo data not complete
             JSR getBitChar
             PUSH ZP_meteoRW ;Save ZP to stack
+            PUSH ZP_meteoRW+1 ;Save ZP to stack
             LPTA VAR_meteoWritePTR
             SPT ZP_meteoRW
             LDXA VAR_meteoCount2
             STA (ZP_meteoRW),X
             INCA VAR_meteoCount2
+            POP ZP_meteoRW+1 ;Restore ZP from stack
             POP ZP_meteoRW ;Restore ZP from stack
         
 ;Get bit (month)
@@ -1283,7 +1401,7 @@ _gMon0      LDAA VAR_bitData
             SHR
             STAA VAR_bitCache+1            
             ;Check for last bit
-            LDAA VAR_second
+            LDAA VAR_tmpSecond
             CMP #49       
             JNZ hdlRTS 
 
@@ -1338,12 +1456,14 @@ _gMet70     LDAA VAR_meteoCount1
             CMP #28
             JNZ _gYear0 ;Previous data not complete
             PUSH ZP_meteoRW ;Save ZP to stack
+            PUSH ZP_meteoRW+1 ;Save ZP to stack
             LPTA VAR_meteoWritePTR
             SPT ZP_meteoRW
             JSR getBitChar
             LDXA VAR_meteoCount2
             STA (ZP_meteoRW),X
             INCA VAR_meteoCount2
+            POP ZP_meteoRW+1 ;Restore ZP from stack
             POP ZP_meteoRW ;Restore ZP from stack
 
 ;Get bit (year)
@@ -1404,16 +1524,22 @@ _pDateOK    LDAA VAR_bitCache+1
     JSR (KERN_PRINTDEZ)
 #ENDIF 
 
-;Add data to struct in RAM
+
+;Add dataOK byte to struct in RAM
 hdlRTS      PUSH ZP_dataStructPTR ;Save ZP to stack
+            PUSH ZP_dataStructPTR+1 ;Save ZP to stack
             LPTA VAR_dataStructPTR
             SPT ZP_dataStructPTR
             LDX #01h ;VAR_dataOK
             LDA START_DATA_STRUCT,X
             STA (ZP_dataStructPTR),X 
+            POP ZP_dataStructPTR+1
             POP ZP_dataStructPTR
     
 ;Start application handler chain
+            ;LDAA VAR_delay
+            ;JNZ _RTS ;If receiver is delayed -> Skip handler
+            
             LDAA VAR_HDLCount
             JPZ _RTS ;No handler registered
 
@@ -1438,10 +1564,8 @@ _hdl1       TXA
             PHA
             LDA VAR_tabHANDLER,X
             PHA
-
             JSR (KERN_CALLFROMROM)
-
-_exitint    LDAA VAR_HDLPTR
+            LDAA VAR_HDLPTR
             TAX
             JMP _hdl2 ;Next handler
 
@@ -1467,7 +1591,7 @@ _syncD0     LDA #08h
             ORAA VAR_ledsDataOK
             STAA VAR_ledsDataOK
             
-            LDAA VAR_second
+            LDAA VAR_tmpSecond
             CMP #21
             JNC _syncD4 ;Second <21 -> No time information fetching
             CMP #29
@@ -1559,11 +1683,11 @@ getBit
 _gBit0      CLA ;Time < PARAM_LOWHIGH -> Bit = 0
             RTS
         
-;Get bit information from second as Char (Output: A = Char)        
+;Translate bitInfo to Char ('0' or '1') (Output: A = Char)        
 getBitChar      
-            LDAA VAR_bitCache
-            CMP #PARAM_LOWHIGH
-            JNC _gBitC0
+            LDAA VAR_bitData
+            CMP #80h
+            JNZ _gBitC0
             ;Time >= PARAM_LOWHIGH -> Bit = 1
             LDA #'1'
             SKB
@@ -1589,11 +1713,12 @@ _bCnt2      SEC ;Counter value "even"
             PLA
             RTS
         
-     
+        
 ;Convert BCD to decimal (Input: A = BCD value) (Output: A = decimal vlaue)      
 bcdToDec
             PHA
             DIV #10h
+            CLC
             MUL #00Ah
             STAA VAR_bitCache+1
             PLA
@@ -1602,7 +1727,7 @@ bcdToDec
             ADCA VAR_bitCache+1
             RTS
 
-_RTS    
+_RTS        
             CLC
             RTS
       
@@ -1610,4 +1735,3 @@ _failRTS
             CLA
             SEC
             RTS
-        
