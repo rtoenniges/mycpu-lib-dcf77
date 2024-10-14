@@ -25,7 +25,7 @@
 ;Debug Message Format
 ;Second[MeteoCount1|MeteoCount2]: BitLevel(PulseTime) {Additional comments}
 ;Example: 28[28|49]: H(6) Minute: 32
-
+    
 ORG 8000h
  DW 8002h
  DW initfunc
@@ -225,8 +225,14 @@ initfunc
 ;Termination function
 ;---------------------------------------------------------                  
 termfunc  
+            LDAA VAR_HDLCount
+            JPZ _term0
+            ;avoid kill of application if still handler registered
+            LDA  #12h
+            JMP  (KERN_MULTIPLEX)
+            
             ;Disable timer-interrupt
-            LDA  #1
+_term0      LDA  #1
             LDXA VAR_timerhandle      
             JSR (KERN_MULTIPLEX)
             ;Disable hardware-interrupt
@@ -560,25 +566,26 @@ deSync
             JMP _rInt4
             
             
-;New second -> add to stack
+;New second -> add to FIFO
 _rInt1      LDAA VAR_FIFOptr
             CLC
-            MUL #2 ;Stack has two bytes per pointer
+            MUL #2 ;FIFO has two bytes per pointer
             TAX
             LDAA VAR_second
             STA VAR_FIFOdata,X 
             RTS
             
-;New bit -> add to stack  
+;New bit -> add to FIFO  
 _rInt4      LDAA VAR_FIFOptr
-            CLC
-            MUL #2 ;Stack has two bytes per pointer
+            CMP #PAR_FIFOsize
+            JNC _rInt8
+            CLA
+            STAA VAR_FIFOptr
+_rInt8      CLC
+            MUL #2 ;FIFO has two bytes per pointer
             TAX
             JSR getBit
             STA VAR_FIFOdata+1,X
-            LDAA VAR_FIFOptr
-            CMP #PAR_FIFOsize-1
-            JPC _RTS
             INCA VAR_FIFOptr
             RTS
 ;END - Receiver interrupt
@@ -609,15 +616,18 @@ _tint0      LDAA FLG_startPSecond
 int_idle
 
 ;New bit available?
-            SEC
-            JSR (KERN_SPINLOCK)
-
             LDAA VAR_FIFOptr ;Write Pointer
             JPZ _pSec ;No data
+            SEC
+            JSR (KERN_SPINLOCK)
             
 ;Gather second and bit data from FIFO
             LDAA VAR_FIFOptr+1
-            CLC
+            CMP #PAR_FIFOsize
+            JNC _nBit11
+            CLA
+            STAA VAR_FIFOptr+1
+_nBit11     CLC
             MUL #2 ;FIFO has two bytes per pointer
             TAX
             LDA VAR_FIFOdata,X
@@ -627,44 +637,37 @@ int_idle
             
             LDAA VAR_FIFOptr
             DEC ;WritePTR starts by 1
-            JPZ _nBit8
             CMPA VAR_FIFOptr+1
             JPZ _nBit7
-            JNC _nBit9
-            ;Write>Read
+            ;Write>Read OR Write<Read (Write ptr overflow)
             INCA VAR_FIFOptr+1
             JMP _nBit
+
             
-;Write==0(1)            
-_nBit8      DECA VAR_FIFOptr
-            JMP _nBit
-            
-;Read==Write>=1(2)           
+;Read==Write           
 _nBit7      STZA VAR_FIFOptr
             STZA VAR_FIFOptr+1
             JMP _nBit
 
-;Write<Read --> ERROR reset FIFO
-_nBit9      STZA VAR_FIFOptr
-            STZA VAR_FIFOptr+1
-_nBit10     CLC
-            JSR (KERN_SPINLOCK)
-            RTS
 
 ;Pseudo second?
 _pSec       LDAA VAR_FIFOptr
-            JNZ _nBit10 ;Add pseudo second only if idle-task is in sync with interrupt
+            JNZ _nBit8 ;Add pseudo second only if idle-task is in sync with interrupt
             LDAA VAR_pSecond
             CMP #31
-            JNC _nBit10
+            JNC _nBit8
             INCA VAR_tmpSecond
             STZA VAR_bitData
             STZA FLG_startPSecond
             STZA VAR_pSecond
+            JMP _nBit
+            
+_nBit8      CLC
+            JSR (KERN_SPINLOCK)
+            RTS
 
 ;New bit received
-_nBit       CLC
-            JSR (KERN_SPINLOCK)
+_nBit       JSR _nBit8
 
 ;Add VAR_delay to data struct in RAM            
             LDX #08h
@@ -672,10 +675,15 @@ _nBit       CLC
             SEC
             SBCA VAR_FIFOptr+1
             STAA VAR_delay
-            STA (ZP_dataStructPTR),X
+            JPC _nBit6
+            LDA #0FFh
+            SEC
+            SBCA VAR_delay
+            STAA VAR_delay
+_nBit6      STA (ZP_dataStructPTR),X
             
-;TODO: DEBUG PRINT stack pointer
-    ;LDAA VAR_FIFOptr
+;TODO: DEBUG PRINT FIFO pointer
+    ;LDAA VAR_delay
     ;CLX
     ;CLY
     ;JSR (KERN_PRINTDEZ)
@@ -725,7 +733,7 @@ _tFill3     LDX #02h ;VAR_bitData
             POP ZP_dataStructPTR ;Restore ZP from stack
                       
 ;If not synced -> Stop decoding
-_nBit0      LDAA FLG_synced
+            LDAA FLG_synced
             JNZ hdlRTS
 
 ;DEBUG print time measurement and bit information
