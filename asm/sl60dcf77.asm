@@ -2,7 +2,7 @@
 ;******************************************
 ;***********  DCF77 Library  **************
 ;******************************************
-;***** by Robin Toenniges (2016-2024) *****
+;***** by Robin Toenniges (2016-2025) *****
 ;******************************************
 
 #include <conio.hsm> 
@@ -46,10 +46,10 @@ KERN_IOCHANGELED    EQU 0306h   ;Kernel routine for changing the Multi-I/O-LEDs
 #ENDIF
 
 ;Decoding parameter
-;Low        = 100ms         is theoretically 3
-;High       = 200ms         is theoretically 6
-;Syncpause  = 1800-1900ms   is theoretically 54-57
-;New second = 800-900ms     is theoretically 24-27
+;Low        = 100ms         is theoretically 3 tics
+;High       = 200ms         is theoretically 6 tics
+;Syncpause  = 1800-1900ms   is theoretically 54-57 tics
+;New second = 800-900ms     is theoretically 24-27 tics
 PARAM_LOWHIGH       SET 5       ;Edge time < PARAM_LOWHIGH      = 0(Low),           >= PARAM_LOWHIGH    = 1(High)
 PARAM_SYNCPAUSE     SET 50      ;Edge time < PARAM_SYNCPAUSE    = New second/bit,   >= PARAM_SYNCPAUSE  = Syncpoint
 PARAM_SECOND        SET 20      ;Edge time < PARAM_SECOND       = New bit,          >= PARAM_SECOND     = New second
@@ -59,15 +59,15 @@ PARAM_IGNORE        SET 2       ;Edge time < PARAM_IGNORE       = Signal interfe
 FLG_firstStart      DB  1   ;This flag indicates first start of library -> Ignore first edge
 FLG_dcfReceiver     DB  0   ;This flag is set to 1 if new input (rising edge) comes from the DCF77-Receiver
 FLG_startPSecond    DW  0   ;This flag starts the pseudo second (Bit 59) if no leap second was received (Byte 0 = Timer start, Byte 1 = Second reached)
-VAR_bitCount        DB  0   ;Timer Interrupt Counter
+VAR_bitCount        DB  0   ;Timer Interrupt Counter / Count ticks between edges (Low = ~3, High = ~6)
 VAR_bitCache        DW  0   ;Byte 0 = time value, Byte 1 = temp value
-VAR_edgeCnt         DB  0   ;Edge counter
+VAR_edgeCnt         DB  0   ;Edge counter for error checking
 
-VAR_dateParity      DB  0
+VAR_dateParity      DB  0    ;Temp variable for date parity checking
 
 VAR_pSecond         DB  0   ;Pseudo second to bridge desynchronization
 
-;Time variables initialized with FFh to "lock" Get-functions until 2nd synchronization point reached
+;Time variables initialized with FFh to lock "Get-functions" until 2nd synchronization point reached
 ;*****************
 START_DATA_STRUCT
 FLG_synced          DB  1   ;00h | Sync flag -> 0 if synchron with dcf77
@@ -75,7 +75,7 @@ VAR_dataOK          DB  0   ;01h | Parity check -> Bit 0 = Minutes OK, Bit 1 = H
 VAR_bitData         DB  0   ;02h | Bit data '0->00h' or '1->80h' of current second
 VAR_addInfo         DB  0, 0, 0, 0, 0   ;03h - 07h | Additional infos 1 or 0 (03h = Callbit, 04h = Switch MEZ/MESZ, 05h = MESZ, 06h = MEZ, 07h = Leap second)
 
-VAR_delay           DB  0   ;08h | delay in seconds
+VAR_delay           DB  0   ;08h | delay in seconds/bits
 VAR_reserve         DB  0   ;09h | Reserve
 
 VAR_second          DB  0FFh ;0Ah | DCF77-Second/Bit counter
@@ -106,9 +106,10 @@ VAR_meteoWrite      DB  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
          
 VAR_dataStructPTR   DS  2
     
-ZP_dataStructPTR    EQU 10h ;Pointer for Data struct
-VAR_meteoCount1     DB  0 ;Weather bit counter (0-41)
-VAR_meteoCount2     DB  0 ;Time bit counter (42-81)
+ZP_dataStructPTR    EQU 10h ;Pointer for Data struct in extra RAM
+
+VAR_meteoCount1     DB  0 ;Weather bit counter for METEO data (0-41)
+VAR_meteoCount2     DB  0 ;Time bit counter for METEO data (42-81)
 
 VAR_tmpSecond       DB  0
 VAR_tmpMinutes      DB  0
@@ -124,6 +125,7 @@ VAR_timerhandle     DB  0   ;Address of timer interrupt handle
 PAR_HDLMax          SET 6 ;Maximum number of App-Handler
 VAR_tabHANDLER      DS  2*PAR_HDLMax  ;Address register for handlers
 VAR_tabHDLROMPAGE   DS  PAR_HDLMax ;ROM-Pages from registered handlers
+FLG_startHandler    DB  0
 
 VAR_HDLCount        DB  0 ;Number of registered handlers
 VAR_HDLbitmaskREG   DB  0,0,0,0,0,0 ;Bitmask of registered handlers
@@ -158,7 +160,6 @@ codestart
 ;Library handling  
 ;---------------------------------------------------------  
 
-
 ;Library initialization
 ;---------------------------------------------------------   
 initfunc
@@ -168,10 +169,10 @@ initfunc
             JSR (KERN_ISLOADED)
             CLA
             JPC _RTS
-            
-;Initialize Zeropointer
+        
+            ;Reference Zeropointer
             FLG ZP_dataStructPTR
-            FLG ZP_dataStructPTR+1
+            FLG ZP_dataStructPTR+1        
 
 #IFDEF HIGH_ROM
 ;Move this program to a separate memory page
@@ -518,6 +519,7 @@ _rInt2      CMP #PARAM_SECOND
             JNZ _rInt7
             LDAA VAR_second
             CMP #59
+            JNZ _rInt1
             LDA #1
             STAA FLG_startPSecond
             JMP _rInt1
@@ -536,10 +538,15 @@ _rInt3      LDAA VAR_edgeCnt ;First do signal checking -> Twice as many edges+1 
             SBC #1
             DIV #2
             CMPA VAR_second
-            JPZ _rInt4 ;Check successfull -> Go forward to bit checking
+            JNZ deSync ;Check successfull -> Go forward to bit checking
+            LDA #1
+            STAA FLG_startHandler ;Start App-Handler every new bit
+            JMP _rInt4
             
 ;No longer synchronized        
 deSync  
+            LDAA FLG_synced
+            JNZ deSync1    ;Skip reset if already desync
             LDA #1 
             STAA FLG_synced
             LDA #08
@@ -551,7 +558,7 @@ deSync
             STZA FLG_startPSecond
             STZA FLG_startPSecond+1
             STZA VAR_pSecond
-            JSR _rInt1
+deSync1     JSR _rInt1
             JMP _rInt4
             
             
@@ -649,6 +656,8 @@ _pSec       LDAA VAR_FIFOptr
             STZA VAR_bitData
             STZA FLG_startPSecond
             STZA VAR_pSecond
+            LDA #1
+            STAA FLG_startHandler ;Start App-Handler every new bit + pseudo second
             JMP _nBit
             
 _nBit8      CLC
@@ -723,7 +732,7 @@ _tFill3     LDX #02h ;VAR_bitData
                       
 ;If not synced -> Stop decoding
             LDAA FLG_synced
-            JNZ hdlRTS
+            JNZ decRTS
 
 ;DEBUG print time measurement and bit information
 #IFDEF DEBUG
@@ -819,7 +828,7 @@ _nBit2      POP ZP_dataStructPTR+1 ;Restore ZP from stack
             POP ZP_dataStructPTR ;Restore ZP from stack
             LDAA VAR_dataOK
             AND #04h
-            JPZ hdlRTS
+            JPZ decRTS
             LDAA VAR_tmpYear ;Take over 'year'
             STAA VAR_year
             TAY
@@ -834,7 +843,7 @@ _nBit2      POP ZP_dataStructPTR+1 ;Restore ZP from stack
             PHA
             LDAA VAR_tmpSecond
             CMP #0
-            JNZ hdlRTS ;Sync every minute at xx:xx:00
+            JNZ decRTS ;Sync every minute at xx:xx:00
             PLA
             SEC
             JSR (KERN_GETSETDATE)
@@ -854,14 +863,14 @@ _tFill0     LDA START_DATA_STRUCT,X
 
 _tFill4     POP ZP_dataStructPTR+1 ;Restore ZP from stack
             POP ZP_dataStructPTR ;Restore ZP from stack
-            JMP hdlRTS
+            JMP decRTS
 
 ;Second > 0        
 _nBit3      CMP #20
             JNZ _nBit4
             LDAA VAR_bitData ;Second/bit = 20 -> Begin of time information always '1'
             JPZ deSync ;If Bit 20 != 1 -> Not synchronized or incorrect signal
-            JMP hdlRTS
+            JMP decRTS
  
 ;Second != 20 - Get/decode data
 _nBit4      LDAA VAR_tmpSecond
@@ -889,11 +898,11 @@ _nBit4      LDAA VAR_tmpSecond
             CMP #59
             JNC getYear ;Go to year decoding
             ;Second >= 59
-            JNZ hdlRTS
+            JNZ decRTS
             ;Second = 59 -> Leap second!
             LDAA VAR_bitData ;Always '0'
             JNZ deSync 
-            JMP hdlRTS
+            JMP decRTS
 
 
 ;Get/decode meteotime
@@ -906,7 +915,7 @@ getMeteo
             ;Minute -> n+1 or n+2
             LDAA VAR_meteoCount1
             CMP #14
-            JNC hdlRTS ;Previous data not complete
+            JNC decRTS ;Previous data not complete
             TAX
             JSR getBitChar
             STA VAR_meteoWrite,X
@@ -914,7 +923,7 @@ getMeteo
             TXA
             CMP #41
             JPZ _getMeteo0
-            JMP hdlRTS
+            JMP decRTS
             
             ;Last bit received
 _getMeteo0  CLA
@@ -956,7 +965,7 @@ _tFill2     LDA #08h
 
 _gMet12     STZA VAR_meteoCount1 ;Reset bit counter
             STZA VAR_meteoCount2 ;Reset bit counter            
-            JMP hdlRTS    
+            JMP decRTS    
             
 ;Start minute (0, 3, 6, 9, ...)
 _gMet10     LDAA VAR_tmpSecond
@@ -968,7 +977,7 @@ _gMet11     JSR getBitChar
             LDXA VAR_meteoCount1
             STA VAR_meteoWrite,X
             INCA VAR_meteoCount1
-            JMP hdlRTS       
+            JMP decRTS       
 
 ;Get/decode additional information bits
 ;---------------------------------------------------------
@@ -992,7 +1001,7 @@ _getAI1     LDXA VAR_bitCache+1
             POP ZP_dataStructPTR+1 ;Restore ZP from stack
             POP ZP_dataStructPTR ;Restore ZP from stack
 
-            JMP hdlRTS 
+            JMP decRTS 
 
 ;Get/decode minutes
 ;---------------------------------------------------------
@@ -1022,7 +1031,7 @@ _gMin0      LDAA VAR_bitData
             ORAA VAR_bitCache+1
             SHR
             STAA VAR_bitCache+1
-            JMP hdlRTS
+            JMP decRTS
 
 ;*** Get meteo 2/2 ***
 _gMet21     LDAA VAR_meteoCount2
@@ -1059,7 +1068,7 @@ _pMinBAD    LDA #00Eh ;Parity n.OK
     JSR (KERN_PRINTSTR)
 #ENDIF 
 
-            JMP hdlRTS
+            JMP decRTS
         
 _pMin0      PLA ;Bit count = "even"
             JNZ _pMinBAD
@@ -1083,7 +1092,7 @@ _pMinOK     LDAA VAR_bitCache+1
     CLY
     JSR (KERN_PRINTDEZ)
 #ENDIF 
-            JMP hdlRTS
+            JMP decRTS
         
     
 ;Get/decode hours
@@ -1109,7 +1118,7 @@ _gHrs0      LDAA VAR_bitData
             ORAA VAR_bitCache+1
             SHR
             STAA VAR_bitCache+1
-            JMP hdlRTS
+            JMP decRTS
 
 ;*** Get meteo 2/2 ***
 _gMet31     LDAA VAR_meteoCount2
@@ -1150,7 +1159,7 @@ _pHrsBAD    LDA #00Dh ;Parity n.OK
     JSR (KERN_PRINTSTR)
 #ENDIF 
 
-            JMP hdlRTS
+            JMP decRTS
             
 _pHrs0      PLA ;Bit count = "even"
             JNZ _pHrsBAD
@@ -1173,7 +1182,7 @@ _pHrsOK     LDAA VAR_bitCache+1
     CLY
     JSR (KERN_PRINTDEZ)
 #ENDIF 
-            JMP hdlRTS
+            JMP decRTS
                 
         
 ;Get/decode day
@@ -1200,7 +1209,7 @@ _gDay0      LDAA VAR_bitData
             ;Check for last bit
             LDAA VAR_tmpSecond
             CMP #41       
-            JNZ hdlRTS 
+            JNZ decRTS 
 
 ;*** Get meteo 2/2 ***
             LDAA VAR_meteoCount2
@@ -1238,7 +1247,7 @@ _gDay1      SHRA VAR_bitCache+1
     CLY
     JSR (KERN_PRINTDEZ)
 #ENDIF 
-            JMP hdlRTS      
+            JMP decRTS      
         
         
 ;Get/decode weekday
@@ -1265,7 +1274,7 @@ _getWDay0   LDAA VAR_bitData
             ;Check for last bit
             LDAA VAR_tmpSecond
             CMP #44       
-            JNZ hdlRTS
+            JNZ decRTS
 
 ;*** Get meteo 2/2 ***
             LDAA VAR_meteoCount2
@@ -1302,7 +1311,7 @@ _getWDay1   LDAA VAR_bitCache+1
     JSR (KERN_PRINTDEZ)
 #ENDIF 
 
-            JMP hdlRTS 
+            JMP decRTS 
         
         
 ;Get/decode month
@@ -1329,7 +1338,7 @@ _gMon0      LDAA VAR_bitData
             ;Check for last bit
             LDAA VAR_tmpSecond
             CMP #49       
-            JNZ hdlRTS 
+            JNZ decRTS 
 
 ;*** Get meteo 2/2 ***
             LDAA VAR_meteoCount2
@@ -1366,7 +1375,7 @@ _gMon1      SHRA VAR_bitCache+1
     JSR (KERN_PRINTDEZ)
 #ENDIF 
 
-            JMP hdlRTS
+            JMP decRTS
         
 ;Get/decode year
 ;---------------------------------------------------------
@@ -1391,7 +1400,7 @@ _gYear0     SHRA VAR_bitCache+1
             LDAA VAR_bitData
             ORAA VAR_bitCache+1
             STAA VAR_bitCache+1
-            JMP hdlRTS
+            JMP decRTS
 
 ;Last bit
 ;Check parity for whole date (Day, weekday, month, year)         
@@ -1420,7 +1429,7 @@ _pDateBAD   LDA #00Bh ;Partity n.OK
     JSR (KERN_PRINTSTR)
 #ENDIF
 
-            JMP hdlRTS
+            JMP decRTS
             
 _pDat0      PLA ;Bit count = "even"
             JNZ _pDateBAD
@@ -1446,7 +1455,7 @@ _pDateOK    LDAA VAR_bitCache+1
 
 
 ;Add dataOK byte to struct in RAM
-hdlRTS      PUSH ZP_dataStructPTR ;Save ZP to stack
+decRTS      PUSH ZP_dataStructPTR ;Save ZP to stack
             PUSH ZP_dataStructPTR+1 ;Save ZP to stack
             LPTA VAR_dataStructPTR
             SPT ZP_dataStructPTR
@@ -1460,15 +1469,18 @@ hdlRTS      PUSH ZP_dataStructPTR ;Save ZP to stack
             ;LDAA VAR_delay
             ;JNZ _RTS ;If receiver is delayed -> Skip handler
             
+            LDAA FLG_startHandler ;Start Handler only if new second/pseudo second reached
+            JPZ _RTS
+            
             LDAA VAR_HDLCount
-            JPZ _RTS ;No handler registered
+            JPZ _hdlRTS ;No handler registered
 
             CLX
 _hdl0       LDA VAR_HDLbitmaskEN,X
             JNZ _hdl1
 _hdl2       INX
             CPX #PAR_HDLMax
-            JPC _RTS ;End of handler chain
+            JPC _hdlRTS ;End of handler chain
             JMP _hdl0
             
 _hdl1       TXA
@@ -1489,6 +1501,7 @@ _hdl1       TXA
             TAX
             JMP _hdl2 ;Next handler
 
+_hdlRTS     STZA FLG_startHandler
             RTS
             
 ;END - Idle function
