@@ -16,7 +16,7 @@
 ;Comment this line out if you dont want synced status on Multi-I/O-LEDs
 #DEFINE SYNC_DISP 
 ;Comment this line in if you use the SCC-Rack-Extension
-;#DEFINE SCC_BOARD 
+#DEFINE SCC_BOARD 
 ;Comment this line in if library should load on higher ROM-Page
 #DEFINE HIGH_ROM 
 ;Comment this line in if you want debug output
@@ -458,6 +458,7 @@ int_dcf77
             LDAA FLG_firstStart
             JPZ _rInt0
             STZA FLG_firstStart
+            STZA VAR_bitCount
             RTS
 
             ;Check for interference
@@ -510,7 +511,7 @@ _rInt2      CMP #PARAM_SECOND
             JNC _rInt3
             INCA VAR_second ;Time >= PARAM_SECOND -> Next second
             
-;Check for leap second | Add psude second 59/60
+;Check for leap second | Add pseudo second 59/60
             LDAA VAR_addInfo+4 ;Leap second at the end of hour?
             JPZ _rInt7
             JSR func_getMinutes
@@ -536,12 +537,12 @@ _rInt7      LDAA VAR_second
 _rInt3      LDAA VAR_edgeCnt ;First do signal checking -> Twice as many edges+1 as seconds?
             SEC
             SBC #1
-            DIV #2
+            SHR
             CMPA VAR_second
-            JNZ deSync ;Check successfull -> Go forward to bit checking
-            LDA #1
+            JNZ deSync
+            LDA #1 
             STAA FLG_startHandler ;Start App-Handler every new bit
-            JMP _rInt4
+            JMP _rInt4 ;Check successfull -> Go forward to bit checking
             
 ;No longer synchronized        
 deSync  
@@ -549,6 +550,8 @@ deSync
             JNZ deSync1    ;Skip reset if already desync
             LDA #1 
             STAA FLG_synced
+            LDA #1 
+            STAA FLG_startHandler ;Start App-Handler to tell we are not synchronized
             LDA #08
             STAA VAR_ledsDataOK
             STZA VAR_dataOK
@@ -562,23 +565,23 @@ deSync1     JSR _rInt1
             JMP _rInt4
             
             
-;New second -> add to FIFO
-_rInt1      LDAA VAR_FIFOptr
-            CLC
-            MUL #2 ;FIFO has two bytes per pointer
+;1. New second -> add to FIFO
+_rInt1      LDAA VAR_FIFOptr ;Write Pointer/Counter
+            CMP #PAR_FIFOsize
+            JNC _rInt8 ;Counter Overflow?
+            CLA
+            STAA VAR_FIFOptr
+_rInt8      CLC
+            SHL ;FIFO has two bytes per pointer
             TAX
             LDAA VAR_second
             STA VAR_FIFOdata,X 
             RTS
             
-;New bit -> add to FIFO  
-_rInt4      LDAA VAR_FIFOptr
-            CMP #PAR_FIFOsize
-            JNC _rInt8
-            CLA
-            STAA VAR_FIFOptr
-_rInt8      CLC
-            MUL #2 ;FIFO has two bytes per pointer
+;2. New bit -> add to FIFO  
+_rInt4      LDAA VAR_FIFOptr ;Write Pointer/Counter
+            CLC
+            SHL ;FIFO has two bytes per pointer
             TAX
             JSR getBit
             STA VAR_FIFOdata+1,X
@@ -621,10 +624,10 @@ int_idle
             LDAA VAR_FIFOptr+1
             CMP #PAR_FIFOsize
             JNC _nBit11
-            CLA
+            CLA ; Read Pointer Overflow -> Reset
             STAA VAR_FIFOptr+1
 _nBit11     CLC
-            MUL #2 ;FIFO has two bytes per pointer
+            SHL ;FIFO has two bytes per pointer
             TAX
             LDA VAR_FIFOdata,X
             STAA VAR_tmpSecond
@@ -792,35 +795,31 @@ _dbg1   JSR (KERN_PRINTCHAR)
             LPTA VAR_dataStructPTR
             SPT ZP_dataStructPTR  
             LDAA VAR_tmpSecond
-            TAY            
+            TAY ;Save Seconds in Y-Reg
             LDAA VAR_dataOK
             AND #01h
             JPZ _nBit1
             LDAA VAR_tmpMinutes ;Take over 'minutes'
             STAA VAR_minutes
-            TAX
-            PHX
             LDX #0Bh
-            LDA START_DATA_STRUCT,X
             STA (ZP_dataStructPTR),X ;Add minutes to data struct in RAM
+            
 _nBit1      LDAA VAR_dataOK
             AND #02h
             JPZ _nBit2
             LDAA VAR_tmpHours
             STAA VAR_hours ;Take over 'hours'
             LDX #0Ch
-            LDA START_DATA_STRUCT,X
             STA (ZP_dataStructPTR),X ;Add hours to data struct in RAM
-            PLX
+            
             ;Set system time
-            PHA
             LDAA VAR_dataOK
             AND #03h
             CMP #03h
             JNZ _nBit2
-            PLA
-            CPY #0
-            JNZ _nBit2 ;Sync every minute at xx:xx:00
+            LDAA VAR_hours;Load Hours in Accu
+            LDXA VAR_minutes;Load Minutes in X-Reg
+            ;Sync every minute at xx:xx:00
             SEC
             JSR (KERN_GETSETTIME)
             
@@ -839,12 +838,9 @@ _nBit2      POP ZP_dataStructPTR+1 ;Restore ZP from stack
             STAA VAR_weekday
             LDAA VAR_tmpDay ;Take over 'day'
             STAA VAR_day
+            
             ;Set system datetime
-            PHA
-            LDAA VAR_tmpSecond
-            CMP #0
-            JNZ decRTS ;Sync every minute at xx:xx:00
-            PLA
+            ;Sync every minute at xx:xx:00
             SEC
             JSR (KERN_GETSETDATE)
             
@@ -1147,7 +1143,7 @@ parityHours
             PLA ;Bit count = "odd"
             JNZ _pHrsOK
             
-_pHrsBAD    LDA #00Dh ;Parity n.OK
+_pHrsBAD    LDA #0Dh ;Parity n.OK
             ANDA VAR_dataOK
             STAA VAR_dataOK
 
@@ -1652,10 +1648,10 @@ bcdToDec
             PHA
             DIV #10h
             CLC
-            MUL #00Ah
+            MUL #0Ah
             STAA VAR_bitCache+1
             PLA
-            AND #00Fh
+            AND #0Fh
             CLC
             ADCA VAR_bitCache+1
             RTS
