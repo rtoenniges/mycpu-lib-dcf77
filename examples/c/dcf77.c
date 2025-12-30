@@ -3,7 +3,7 @@
  *  Register an application handler and uses struct pointer from library
  *  Compile with "cl65 -t mycpu dcf77.c -o dcf77"
  *
- *  2024  Robin Tönniges, development@toenniges.org
+ *  2025  Robin Toenniges, development@toenniges.org
  */
 
 #include <stdio.h>
@@ -12,6 +12,8 @@
 #include <string.h>
 
 static unsigned int *REG_RAMPAGE = (unsigned int *) 0x3800;
+static unsigned int *REG_ZEROPAGE = (unsigned int *) 0x3A00;
+static unsigned int *REG_STACKPAGE = (unsigned int *) 0x3B00;
 static unsigned char libHandler = 0;
 static unsigned char libROMPAGE = 0;
 static FARPTR dcf77StructPTR = 0;
@@ -27,15 +29,25 @@ static unsigned char yearData[] = "            ";
 static unsigned char tmpRAMPAGE = 0;
 static unsigned char thisRAMPAGE = 0;
 
+static unsigned char tmpZEROPAGE = 0;
+static unsigned char thisZEROPAGE = 0;
 
+static unsigned char tmpSTACKPAGE = 0;
+static unsigned char thisSTACKPAGE = 0;
+
+static unsigned char dcf77Struct[17];
+static unsigned int second, minute, hour, day, month, year, delay;
 
 static void dcfHandler(void)
 {
-    unsigned char dcf77Struct[17];
-    unsigned int second, minute, hour, day, month, year, delay;
-    
     tmpRAMPAGE = *REG_RAMPAGE;
     *REG_RAMPAGE = thisRAMPAGE;
+    
+    tmpZEROPAGE = *REG_ZEROPAGE;
+    *REG_ZEROPAGE = thisZEROPAGE;
+    
+    //tmpSTACKPAGE = *REG_STACKPAGE;
+    //*REG_STACKPAGE = thisSTACKPAGE;
     
     memcpyf2n(&dcf77Struct, dcf77StructPTR, sizeof(dcf77Struct));
 
@@ -202,6 +214,8 @@ static void dcfHandler(void)
     }
     
     *REG_RAMPAGE = tmpRAMPAGE;
+    *REG_ZEROPAGE = tmpZEROPAGE;
+    //*REG_STACKPAGE = tmpSTACKPAGE;
 }
 
 
@@ -237,7 +251,10 @@ int main(int argc, char *argv[])
     unsigned char a, x, y, flags;
     unsigned char codepage = (unsigned char) getcodepage(0);
     unsigned int func_ptr = (unsigned int) &dcfHandler;
+    
     thisRAMPAGE = *REG_RAMPAGE; //Store current RAMPAGE
+    thisZEROPAGE = *REG_ZEROPAGE; //Store current ZEROPAGE
+    //thisSTACKPAGE = *REG_STACKPAGE; //Store current STACKPAGE
     
     // Program already running?
     if (isloaded("dcf77"))
