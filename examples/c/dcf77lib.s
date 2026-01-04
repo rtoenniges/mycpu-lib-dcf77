@@ -4,8 +4,8 @@
 ; FARPTR __fastcall__ dcf_start( void );
 ; void __fastcall__ dcf_stop( void );
 ; void __fastcall__ dcf_regHandler( void *ptr );
-; void dcf_startHandler( void );
-; void dcf_deleteHandler( void );
+; void __fastcall__ dcf_startHandler( void );
+; void __fastcall__ dcf_deleteHandler( void );
 
         .import     k_libselect, k_libdeselect, k_libcall, k_libunload
 		.export     _dcf_start, _dcf_stop, _dcf_regHandler, _dcf_startHandler, _dcf_deleteHandler

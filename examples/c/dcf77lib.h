@@ -61,10 +61,10 @@ void __fastcall__ dcf_stop( void );
 void __fastcall__ dcf_regHandler( HANDLERFUNC handlerfunc );
 /* Register Handler to DCF77 Library. Called every new received bit */
 
-void dcf_startHandler( void );
+void __fastcall__ dcf_startHandler( void );
 /* Start DCF77 Handler registered with "dcf_regHandler" */
 
-void dcf_deleteHandler( void );
+void __fastcall__ dcf_deleteHandler( void );
 /* Stop/Delete DCF77 Handler registered with "dcf_regHandler" */
 
 /* End of dcf77lib.h */

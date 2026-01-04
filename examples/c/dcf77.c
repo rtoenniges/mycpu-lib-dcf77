@@ -219,7 +219,7 @@ static void dcfHandler(void)
     
     *REG_ZEROPAGE = tmpZEROPAGE;
     *REG_RAMPAGE = tmpRAMPAGE;
-    //*REG_STACKPAGE = tmpSTACKPAGE; //Kernel Idle-Function has its own stackpackge
+    //*REG_STACKPAGE = tmpSTACKPAGE;
 }
 
 
