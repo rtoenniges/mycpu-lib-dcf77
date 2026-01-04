@@ -387,7 +387,7 @@ func_getDataStruct
             LPTA VAR_dataStructPTR
             SAY
             SEC
-            SBC #ROMPAGE_RAM0
+            SBC #ROMPAGE_RAM0 ;80h
             SAY
             LDAA REG_ROMPAGE
             INC
@@ -1462,6 +1462,7 @@ decRTS      PUSH ZP_dataStructPTR ;Save ZP to stack
             POP ZP_dataStructPTR
     
 ;Start application handler chain
+;TODO: KERN_ALLOCFREEZSP to assign STACK Pages to handler?
             ;LDAA VAR_delay
             ;JNZ _RTS ;If receiver is delayed -> Skip handler
             
@@ -1522,9 +1523,9 @@ _syncD0     LDA #08h
             
             LDAA VAR_tmpSecond
             CMP #21
-            JNC _syncD4 ;Second <21 -> No time information fetching
+            JNC _syncD4 ;Second < 21 -> No time information fetching
             CMP #29
-            JNC _syncD1 ;Second >= 21 & <29 -> Fetching minutes
+            JNC _syncD1 ;Second >= 21 & < 29 -> Fetching minutes
             CMP #36
             JNC _syncD2 ;Second >= 29 & < 36 -> Fetching hours
             CMP #59
@@ -1532,29 +1533,23 @@ _syncD0     LDA #08h
             JMP _syncD4
             
 ;Fetching minutes
-_syncD1     LDAA VAR_dataOK
-            AND #01h
-            JNZ _syncD4
-            LDA #01h 
+_syncD1     LDA #01h 
             EORA VAR_ledsDataOK
+            AND #09h ;Mask #1001
             STAA VAR_ledsDataOK
             JMP _syncD4
             
 ;Fetching hours
-_syncD2     LDAA VAR_dataOK
-            AND #02h
-            JNZ _syncD4
-            LDA #02h 
+_syncD2     LDA #02h 
             EORA VAR_ledsDataOK
+            AND #0Ah ;Mask #1010
             STAA VAR_ledsDataOK
             JMP _syncD4
             
 ;Fetching date 
-_syncD3     LDAA VAR_dataOK
-            AND #04h
-            JNZ _syncD4
-            LDA #04h 
+_syncD3     LDA #04h 
             EORA VAR_ledsDataOK
+            AND #0Ch ;Mask #1100
             STAA VAR_ledsDataOK
 
 _syncD4     LDAA VAR_dataOK
