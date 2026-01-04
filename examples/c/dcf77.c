@@ -1,41 +1,45 @@
 /*
  *  Displays Date/Time information from DCF77-Library (sl60dcf77) on 4x20 LCD
  *  Register an application handler and uses struct pointer from library
- *  Compile with "cl65 -t mycpu dcf77.c -o dcf77"
  *
- *  2025  Robin Toenniges, development@toenniges.org
+ *  2026  Robin Toenniges, development@toenniges.org
  */
+ 
+// Compile with "cl65 -t mycpu dcf77.c dcf77lib.s -o dcf77"
+ 
+// DO NOT START DIRECTLY AFTER "NETSTART" IN A SCRIPT (e.g. INIT-File) //
+// CPU crashes after first Handler-Call... dont know why :-( //
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <mycpu.h>
 #include <string.h>
+#include "dcf77lib.h"
 
-static unsigned int *REG_RAMPAGE = (unsigned int *) 0x3800;
-static unsigned int *REG_ZEROPAGE = (unsigned int *) 0x3A00;
-static unsigned int *REG_STACKPAGE = (unsigned int *) 0x3B00;
-static unsigned char libHandler = 0;
-static unsigned char libROMPAGE = 0;
+static u16_t *REG_RAMPAGE = (u16_t *) 0x3800;
+static u16_t *REG_ROMPAGE = (u16_t *) 0x3900;
+static u16_t *REG_ZEROPAGE = (u16_t *) 0x3A00;
+static u16_t *REG_STACKPAGE = (u16_t *) 0x3B00;
 static FARPTR dcf77StructPTR = 0;
 
-static unsigned char meszData[] = "    ";
-static unsigned char minData[] = "          ";
-static unsigned char hourData[] = "            ";
-static unsigned char dayData[] = "             ";
-static unsigned char wdayData[] = "         ";
-static unsigned char monthData[] = "           ";
-static unsigned char yearData[] = "            ";
+static u8_t meszData[] = "    ";
+static u8_t minData[] = "          ";
+static u8_t hourData[] = "            ";
+static u8_t dayData[] = "             ";
+static u8_t wdayData[] = "         ";
+static u8_t monthData[] = "           ";
+static u8_t yearData[] = "            ";
 
-static unsigned char tmpRAMPAGE = 0;
-static unsigned char thisRAMPAGE = 0;
+static u8_t tmpRAMPAGE = 0;
+static u8_t thisRAMPAGE = 0;
 
-static unsigned char tmpZEROPAGE = 0;
-static unsigned char thisZEROPAGE = 0;
+static u8_t tmpZEROPAGE = 0;
+static u8_t thisZEROPAGE = 0;
 
-static unsigned char tmpSTACKPAGE = 0;
-static unsigned char thisSTACKPAGE = 0;
+static u8_t tmpSTACKPAGE = 0;
+static u8_t thisSTACKPAGE = 0;
 
-static unsigned char dcf77Struct[17];
+static u8_t dcf77Struct[17];
 static unsigned int second, minute, hour, day, month, year, delay;
 
 static void dcfHandler(void)
@@ -46,7 +50,7 @@ static void dcfHandler(void)
     tmpZEROPAGE = *REG_ZEROPAGE;
     *REG_ZEROPAGE = thisZEROPAGE;
     
-    //tmpSTACKPAGE = *REG_STACKPAGE;
+    tmpSTACKPAGE = *REG_STACKPAGE;
     //*REG_STACKPAGE = thisSTACKPAGE;
     
     memcpyf2n(&dcf77Struct, dcf77StructPTR, sizeof(dcf77Struct));
@@ -213,34 +217,18 @@ static void dcfHandler(void)
         lprintf("Not synchronized...                                         ");
     }
     
-    *REG_RAMPAGE = tmpRAMPAGE;
     *REG_ZEROPAGE = tmpZEROPAGE;
-    //*REG_STACKPAGE = tmpSTACKPAGE;
+    *REG_RAMPAGE = tmpRAMPAGE;
+    //*REG_STACKPAGE = tmpSTACKPAGE; //Kernel Idle-Function has its own stackpackge
 }
 
 
 void doAtExit(void)
 {
-    unsigned char a, x, y, flags;
     
-    //Call sl60dcf77
-    a = 0x60;
-    x = 0;
-    y = 0;
-    flags = 0;
-    kcall(0x02CC, &a, &x, &y, &flags); //Lib select
+    dcf_deleteHandler();
     
-    a = 0x0C;
-    x = libHandler;
-    y = 0;
-    flags = 0;
-    kcall(0x02CA, &a, &x, &y, &flags); //Delete handler
-    
-    a = 0x60;
-    x = 0;
-    y = 0;
-    flags = 0;
-    kcall(0x02D0, &a, &x, &y, &flags); //Unload library
+    dcf_stop();
     
     lcd_clear();
 }
@@ -248,13 +236,8 @@ void doAtExit(void)
 
 int main(int argc, char *argv[])
 {
-    unsigned char a, x, y, flags;
-    unsigned char codepage = (unsigned char) getcodepage(0);
-    unsigned int func_ptr = (unsigned int) &dcfHandler;
-    
-    thisRAMPAGE = *REG_RAMPAGE; //Store current RAMPAGE
-    thisZEROPAGE = *REG_ZEROPAGE; //Store current ZEROPAGE
-    //thisSTACKPAGE = *REG_STACKPAGE; //Store current STACKPAGE
+    /* suppress warning about unused variables */
+    (void)argc,(void)argv,(void)REG_ROMPAGE,(void)REG_STACKPAGE,(void)tmpSTACKPAGE,(void)thisSTACKPAGE;
     
     // Program already running?
     if (isloaded("dcf77"))
@@ -262,54 +245,22 @@ int main(int argc, char *argv[])
         return 0;
     }
     
+    thisRAMPAGE = *REG_RAMPAGE; //Store current RAMPAGE
+    thisZEROPAGE = *REG_ZEROPAGE; //Store current ZEROPAGE
+    thisSTACKPAGE = *REG_STACKPAGE; //Store current STACKPAGE
+    
+    atexit(doAtExit);
+    
     lcd_clear();
     lcd_scroll(0);
     lprintf("--=DCF77 Receiver=--");
     lprintf("Waiting for Sync... ");
     
-    /* suppress warning about unused variables */
-    (void)argc,(void)argv;
     
-    //Call sl60dcf77
-    a = 0x60;
-    x = 0;
-    y = 0;
-    flags = 0;
-    kcall(0x02CC, &a, &x, &y, &flags); //Lib select
+    dcf77StructPTR = dcf_start();
+    dcf_regHandler(&dcfHandler);
+    dcf_startHandler();
     
-    //Get DCF77-Lib ROMPAGE
-    a = 0x0A;
-    x = 0;
-    y = 0;
-    kcall(0x02CA, &a, &x, &y, &flags); //Lib call
-    libROMPAGE = a;
-    
-    //Get struct pointer and RAMPAGE -> Build FARPTR
-    a = 0x0B;
-    x = 0;
-    y = 0;
-    kcall(0x02CA, &a, &x, &y, &flags); //Lib call
-    dcf77StructPTR = ((unsigned char) x) |
-                     ((unsigned int) y << 8) |
-                     ((unsigned long) a << 16) |
-                     ((unsigned long) libROMPAGE << 24);
-                     
-                     
-    //Register application handler
-    a = 0x0C;
-    x = (unsigned char) func_ptr & 0xFF;
-    y = (unsigned char) ((func_ptr >> 8) & 0xFF);
-    flags = 1;
-    kcall(0x02CA, &a, &x, &y, &flags); //Lib call
-    
-    //Tell C-ROMPAGE for appl. handler
-    libHandler = a;
-    x = libHandler;
-    y = codepage;
-    a = 0x0D;
-    kcall(0x02CA, &a, &x, &y, &flags); //Lib call
-    
-    atexit(doAtExit);
     
     tsr(0); 
     return 0;
